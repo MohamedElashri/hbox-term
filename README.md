@@ -11,15 +11,6 @@ files, services, containers and logs, with nothing installed on the remote side.
   <img src="docs/images/screenshot.png" width="900" alt="hbox-term with three local tabs, the first split into cargo test output, a log stream with a highlighted error, and git log; servers grouped in the sidebar">
 </p>
 
-- **Terminal:** tabs and splits, Ghostty keybindings on Linux and iTerm2's on macOS, a quick
-  (drop-down) terminal, inline images, triggers, broadcast input and session restore.
-- **Shell integration** for zsh, bash and fish, locally and over SSH: exit status marks, jump
-  between prompts, new panes in the current directory, notifications when long commands finish.
-- **Ghostty config:** reads `~/.config/hbox-term/config` in Ghostty's format and includes your
-  Ghostty config, so fonts, themes and keybinds carry over.
-- **Servers:** SSH with keys, passwords and jump hosts, an encrypted credential vault, SFTP files,
-  systemd services, Docker and Podman, logs, ports and tunnels. Edit remote files in your own editor.
-- **Updates** when you ask for them: check from Settings, read the notes, install a signed update.
 
 The [user guide](USER_GUIDE.md) covers everything in detail, and the [changelog](CHANGELOG.md)
 lists what each release adds.
