@@ -20,10 +20,11 @@ Preview release of the redesigned connection library and SSH-agent identities.
 - SQLite identity migration with a pre-migration backup, transactional connection bindings, and referenced-identity protection.
 - Agent-only authentication without copying private keys or requiring a local credential vault.
 - Detailed agent authentication errors and a fix for closed agent sockets causing an indefinite receive loop.
+- Patched bundled libssh2 to prevent failed agent connections from double-closing a reused file descriptor.
 
 ### Validation
 
-- 65 frontend tests and 38 Rust tests passed on macOS; two live-only tests are excluded from the normal suite.
+- 65 frontend tests and 39 Rust tests passed on macOS; two live-only tests are excluded from the normal suite.
 - Authorized read-only SSH authentication through 1Password passed using the production client in the test executable.
 - Native macOS QA verified import, group rename/collapse, connection saving, local terminal output, and distinct icons.
 - Added a macOS/Linux CI matrix and an isolated, ad-hoc-signed macOS QA build target.

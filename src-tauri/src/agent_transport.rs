@@ -76,6 +76,25 @@ mod tests {
         assert_eq!(recv(&mut buffer), -(libc::ECONNRESET as isize));
     }
     #[test]
+    fn failed_agent_connect_does_not_close_reused_descriptor() {
+        use std::io::Read;
+        let session = ssh2::Session::new().unwrap();
+        let mut agent = session.agent().unwrap();
+        let missing = std::path::PathBuf::from("/tmp")
+            .join(format!("hbox-missing-{}", uuid::Uuid::new_v4()));
+        agent.set_identity_path(&missing).unwrap();
+        assert!(agent.connect().is_err());
+        // Unix reuses the descriptor closed by connect failure. Agent::drop must
+        // not close this new socket (the upstream code retained the stale fd).
+        let (mut sender, mut receiver) = UnixStream::pair().unwrap();
+        drop(agent);
+        sender.write_all(b"ok").expect("unrelated socket must remain open");
+        let mut bytes = [0; 2];
+        receiver.read_exact(&mut bytes).unwrap();
+        assert_eq!(&bytes, b"ok");
+    }
+
+    #[test]
     fn production_agent_probe_returns_when_agent_disconnects_mid_request() {
         use std::io::Read;
         use std::os::unix::net::UnixListener;
