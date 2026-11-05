@@ -59,7 +59,15 @@ See the [developer guide](DEVELOPER_GUIDE.md) for dependencies, architecture and
 [MIT](LICENSE). Bundles JetBrains Mono under the
 [SIL Open Font License](licenses/JetBrainsMono-OFL.txt).
 
+## Updates
+
+Use **Ternway → Check for updates…** on macOS, **Help → Check for updates…** on Linux,
+or the button in **About Ternway**. Settings → Updates and the command palette offer the
+same flow: check GitHub releases, read the release notes, download and install a signed update,
+then restart when you’re ready. Restarting ends active terminal sessions. Source and development
+builds link to release downloads instead of replacing themselves.
+
 ## About Ternway
 
-Open **Settings → About Ternway** for version/build details, project links, credits
+Open **Settings → About → About Ternway** for version/build details, project links, credits
 and license information. On macOS, **Ternway → About Ternway** opens the same page.

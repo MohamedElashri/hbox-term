@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Added a dedicated GitHub update dialog, with shortcuts in the app menu and About page.
+
 ## 0.2.1 - 2026-11-05
 
 - Organized Settings into sections, with About last.

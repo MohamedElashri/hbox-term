@@ -20,6 +20,7 @@ mod storage;
 mod terminal;
 mod tier3;
 mod tunnels;
+mod update_support;
 
 use log_stream::LogSessions;
 use models::*;
@@ -1437,15 +1438,14 @@ struct AppMetadata {
 
 #[tauri::command]
 fn app_metadata(app: AppHandle) -> AppMetadata {
-    // The updater installs the same package type the running app came from. A source build has
-    // none and would fall back to replacing its binary with the AppImage, so it only gets links.
-    let reason = if cfg!(debug_assertions) {
-        "Development builds update with git pull and make."
-    } else if tauri::utils::platform::bundle_type().is_none() {
-        "This build was not installed from a release package. Rebuild it or use the install script."
-    } else {
-        ""
-    };
+    // Only packaged installations can replace themselves; source builds get release links.
+    let executable = std::env::current_exe().ok();
+    let reason = update_support::unsupported_reason(
+        cfg!(debug_assertions),
+        std::env::consts::OS,
+        tauri::utils::platform::bundle_type().is_some(),
+        executable.as_deref(),
+    );
     AppMetadata {
         version: app.package_info().version.to_string(),
         os: std::env::consts::OS,
@@ -1727,6 +1727,16 @@ pub fn run() {
                             true,
                             None::<&str>,
                         )?)?;
+                        submenu.insert(
+                            &tauri::menu::MenuItem::with_id(
+                                app,
+                                "check-updates",
+                                "Check for updates…",
+                                true,
+                                None::<&str>,
+                            )?,
+                            1,
+                        )?;
                         if cfg!(target_os = "macos") {
                             submenu.set_text("Ternway")?;
                         }
@@ -1735,12 +1745,16 @@ pub fn run() {
             }
             app.set_menu(menu)?;
             app.on_menu_event(|app, event| {
-                if event.id().as_ref() == "about-ternway" {
-                    if let Some(window) = app.get_webview_window("main") {
-                        let _ = window.show();
-                        let _ = window.set_focus();
-                        let _ = window.emit("show-about", ());
-                    }
+                let event_name = match event.id().as_ref() {
+                    "about-ternway" => "show-about",
+                    "check-updates" => "check-updates",
+                    _ => return,
+                };
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.unminimize();
+                    let _ = window.set_focus();
+                    let _ = window.emit(event_name, ());
                 }
             });
             let data_dir = app.path().app_local_data_dir()?;

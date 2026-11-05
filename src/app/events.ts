@@ -24,7 +24,7 @@ import { ensureDiskVarLog, openDiskPathInFiles, selectDiskTab } from "./views/di
 import { clearCommandResults, clearContainerLogs, clearRefreshTimer, closeWorkspaceTab, loadActiveView, loadAdministrationTab, selectLocalWorkspace, selectServer, selectWorkspaceTab, setView } from "./workspace";
 import type { TerminalRenderer } from "./state";
 import { loadTerminalConfig } from "./terminal-config";
-import { RELEASES_URL, updates } from "./updater";
+import { checkForUpdates, RELEASES_URL, updates } from "./updater";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { createWorkspaceTabDragController } from "./workspace-tab-drag";
 
@@ -386,8 +386,9 @@ export async function runAction(action: string, target: HTMLElement = document.c
     case "dock-position": toggleDockPosition(); break;
     case "open-config": await invoke("open_config_file").catch(setError); break;
     case "check-updates":
-      if (state.modal !== "security") await runAction("credential-settings");
-      await updates.checkNow();
+      state.modal = "updates";
+      render();
+      await checkForUpdates();
       break;
     case "install-update": await updates.install(); break;
     case "restart-update":
