@@ -96,6 +96,9 @@ impl SshClient {
         store: &Store,
         visited: &mut Vec<String>,
     ) -> Result<Self, String> {
+        if profile.auth_method == AuthMethod::OpenSsh {
+            return Err("OpenSSH-linked connections open in the terminal. Managed file and server tools require a managed connection".into());
+        }
         if visited.iter().any(|id| id == &profile.id) {
             return Err("Bastion profiles contain a connection cycle".to_string());
         }
@@ -624,6 +627,7 @@ fn password_required(profile: &ServerProfile, message: &str) -> String {
 
 fn authenticate(session: &Session, profile: &ServerProfile, store: &Store) -> Result<(), String> {
     match profile.auth_method {
+        AuthMethod::OpenSsh => return Err("Use the OpenSSH terminal for this connection".into()),
         AuthMethod::SshAgent => {
             let identity = store.resolve_identity(
                 profile
@@ -1307,14 +1311,15 @@ pub(crate) fn ensure_not_cancelled(cancellation: Option<&Arc<AtomicBool>>) -> Re
 
 pub(crate) fn profile_key(profile: &ServerProfile) -> String {
     format!(
-        "{}:{}:{}:{:?}:{}:{}:{}",
+        "{}:{}:{}:{:?}:{}:{}:{}:{:?}",
         profile.host,
         profile.port,
         profile.username,
         profile.auth_method,
         profile.key_path.as_deref().unwrap_or_default(),
         profile.jump_host_id.as_deref().unwrap_or_default(),
-        profile.identity_id.as_deref().unwrap_or_default()
+        profile.identity_id.as_deref().unwrap_or_default(),
+        profile.open_ssh
     )
 }
 
@@ -1925,20 +1930,8 @@ mod live_onepassword_tests {
 #[cfg(test)]
 mod password_login_tests {
     use super::*;
-    use std::io::{BufRead, BufReader, Read};
-    use std::process::{Child, Command, Stdio};
-
-    struct Fixture {
-        server: Child,
-        directory: std::path::PathBuf,
-    }
-    impl Drop for Fixture {
-        fn drop(&mut self) {
-            let _ = self.server.kill();
-            let _ = self.server.wait();
-            let _ = std::fs::remove_dir_all(&self.directory);
-        }
-    }
+    use crate::ssh_test_fixture::SshFixture;
+    use std::io::Read;
 
     #[test]
     fn password_responses_never_fill_otp_or_echoed_challenges() {
@@ -1976,38 +1969,9 @@ mod password_login_tests {
     #[ignore = "Run make test-ssh-password after installing the loopback fixture dependencies"]
     fn password_login_over_real_ssh() {
         for mode in ["password", "keyboard", "fallback"] {
-            let python = std::env::var("TERNWAY_SSH_TEST_PYTHON")
-                .expect("Set TERNWAY_SSH_TEST_PYTHON to the fixture virtualenv's Python");
-            let mut server = Command::new(python)
-                .arg(concat!(
-                    env!("CARGO_MANIFEST_DIR"),
-                    "/../tests/fixtures/ssh_password_server.py"
-                ))
-                .arg(mode)
-                .stdout(Stdio::piped())
-                .spawn()
-                .unwrap();
-            let directory =
-                std::env::temp_dir().join(format!("ternway-password-{}", uuid::Uuid::new_v4()));
-            let stdout = server.stdout.take().unwrap();
-            let _fixture = Fixture {
-                server,
-                directory: directory.clone(),
-            };
-            let (ready, port_line) = std::sync::mpsc::channel();
-            std::thread::spawn(move || {
-                let mut line = String::new();
-                let result = BufReader::new(stdout).read_line(&mut line).map(|_| line);
-                let _ = ready.send(result);
-            });
-            let line = port_line
-                .recv_timeout(Duration::from_secs(15))
-                .expect("SSH fixture startup timed out")
-                .unwrap();
-            let port: u16 = line
-                .trim()
-                .parse()
-                .expect("Install tests/fixtures/requirements.txt in TERNWAY_SSH_TEST_PYTHON");
+            let fixture = SshFixture::start(mode);
+            let directory = &fixture.directory;
+            let port = fixture.port;
             let store = Store::open(
                 &directory.join("test.sqlite3"),
                 &directory.join("vault.enc"),

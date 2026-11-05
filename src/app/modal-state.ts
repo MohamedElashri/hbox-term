@@ -62,7 +62,7 @@ export function handleModalKeydown(root: HTMLElement, event: KeyboardEvent): boo
 /** Retain live form controls, including auth choices, instead of copying secrets into state. */
 export function restoreConnectionForm(root: HTMLElement, previous: HTMLFormElement | null): void {
   const kind = previous?.dataset.form;
-  if (kind !== "server" && kind !== "ssh-password") return;
+  if (kind !== "server" && kind !== "ssh-password" && kind !== "ssh-import") return;
   const next = root.querySelector<HTMLFormElement>(`form[data-form="${kind}"]`);
   if (previous && next && previous.dataset.connectionId === next.dataset.connectionId) next.replaceWith(previous);
 }

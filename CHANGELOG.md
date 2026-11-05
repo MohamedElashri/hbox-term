@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added OpenSSH config connections for native routing, authentication and advanced config support.
+
 - Ask for SSH passwords when connecting, with optional encrypted-vault storage.
 - Fix conditional SSH config imports and leave Git service aliases unchecked.
 

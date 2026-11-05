@@ -60,3 +60,19 @@ test("agent authentication delegates username to identity and omits login secret
 test("switching away from agent removes identity reference", () => {
   assert.equal(connectionDraft(form({ identityId: "stale" })).identityId, undefined);
 });
+
+test("OpenSSH references keep config and alias while omitting managed credentials and routing", () => {
+  const draft = connectionDraft(form({ authMethod: "openSsh", openSshAlias: " work ", openSshConfigPath: "/home/alice/SSH config", host: "wrong-preview", username: "wrong-user", port: "invalid", identityId: "old", password: "old-secret", keyPassphrase: "old-secret", sudoPassword: "old-secret", jumpHostId: "old-bastion" }));
+  assert.equal(draft.host, "work");
+  assert.deepEqual(draft.openSsh, { alias: "work", configPath: "/home/alice/SSH config" });
+  assert.equal(draft.username, "");
+  for (const key of ["password", "keyPassphrase", "sudoPassword"]) assert.equal(Object.hasOwn(draft, key), false);
+  for (const key of ["keyPath", "identityId", "jumpHostId"]) assert.equal(draft[key], undefined);
+  assert.equal(connectionDraft(form({ authMethod: "openSsh", openSshAlias: "work" })).openSsh?.configPath, undefined);
+});
+
+test("OpenSSH aliases cannot smuggle options or additional arguments", () => {
+  for (const alias of ["", "-oProxyCommand=bad", "host extra", "host\nother", "host\0other"]) {
+    assert.throws(() => connectionDraft(form({ authMethod: "openSsh", openSshAlias: alias })), /OpenSSH host alias/);
+  }
+});

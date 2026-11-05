@@ -1,6 +1,6 @@
 import { loadAboutMetadata, aboutBuildSummary } from "./about";
 import { BRAND } from "./brand";
-import { importedDraft, renderImportChoices } from "./ssh-import";
+import { importedDraft, linkedDraft, renderImportChoices } from "./ssh-import";
 import type { SshConfigEntry } from "../types";
 import { escapeHtml } from "./format";
 import { errorText } from "./command-client";
@@ -29,6 +29,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { createWorkspaceTabDragController } from "./workspace-tab-drag";
 
 let importEntries: SshConfigEntry[] = [];
+let importSourcePath = "";
 
 export async function handleClick(event: MouseEvent): Promise<void> {
   const clickedElement = event.target as HTMLElement;
@@ -289,15 +290,17 @@ export async function runAction(action: string, target: HTMLElement = document.c
       } catch (error) { setError(error); }
       break;
     }
-    case "import-ssh-config": importEntries = []; state.modal = "ssh-import"; render(); break;
+    case "import-ssh-config": importEntries = []; importSourcePath = ""; state.modal = "ssh-import"; render(); break;
     case "load-ssh-config": {
       const form = target.closest<HTMLFormElement>("form")!;
       const notice = form.querySelector<HTMLElement>("[data-import-error]")!;
       importEntries = [];
       form.querySelector<HTMLElement>("[data-import-hosts]")!.textContent = "Reading…";
       try {
-        importEntries = await invoke<SshConfigEntry[]>("read_ssh_config", { path: String(new FormData(form).get("path") || "") });
-        form.querySelector<HTMLElement>("[data-import-hosts]")!.innerHTML = renderImportChoices(importEntries);
+        const path = String(new FormData(form).get("path") || "");
+        importEntries = await invoke<SshConfigEntry[]>("read_ssh_config", { path });
+        importSourcePath = path;
+        form.querySelector<HTMLElement>("[data-import-hosts]")!.innerHTML = renderImportChoices(importEntries, new FormData(form).get("importMode") === "linked");
         notice.textContent = "";
       } catch (error) { notice.textContent = errorText(error); form.querySelector<HTMLElement>("[data-import-hosts]")!.textContent = ""; }
       break;
@@ -478,6 +481,18 @@ export function handleChange(event: Event): void {
     void loadActiveView(true);
     return;
   }
+  if (input.dataset.field === "import-mode") {
+    const form = input.closest<HTMLFormElement>("form")!;
+    const linked = input.value === "linked";
+    for (const name of ["username", "identityId"]) {
+      const field = form.elements.namedItem(name) as HTMLInputElement | HTMLSelectElement;
+      field.disabled = linked;
+      const trigger = field.closest(".custom-select")?.querySelector<HTMLButtonElement>(".custom-select-trigger");
+      if (trigger) trigger.disabled = linked;
+    }
+    form.querySelector<HTMLElement>("[data-import-hosts]")!.innerHTML = renderImportChoices(importEntries, linked);
+    return;
+  }
   if (input.dataset.field === "ssh-config") {
     const entry = state.snapshot.sshConfigEntries.find((item) => item.alias === input.value);
     const form = input.closest<HTMLFormElement>('form[data-form="server"]');
@@ -550,7 +565,9 @@ export async function handleSubmit(event: SubmitEvent): Promise<void> {
     try {
       const selected = data.getAll("hosts").map(value => Number(value));
       if (!selected.length) throw new Error("Select at least one host.");
-      const drafts = selected.map(index => importedDraft(importEntries[index], String(data.get("username") || ""), String(data.get("groupName") || ""), String(data.get("identityId") || "")));
+      const drafts = selected.map(index => data.get("importMode") === "linked"
+        ? linkedDraft(importEntries[index], importSourcePath, String(data.get("groupName") || ""))
+        : importedDraft(importEntries[index], String(data.get("username") || ""), String(data.get("groupName") || ""), String(data.get("identityId") || "")));
       for (let i = 0; i < drafts.length; i++) {
         await invoke("save_server", { draft: drafts[i] });
         const checkbox = form.querySelector<HTMLInputElement>(`input[name="hosts"][value="${selected[i]}"]`)!;

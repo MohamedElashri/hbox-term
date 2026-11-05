@@ -21,6 +21,7 @@ import { scrollCommandResultsIntoView, scrollContainerLogsIntoView, viewTransiti
 export function render(): void {
   const previousFocus = document.activeElement;
   const previousConnectionForm = root.querySelector<HTMLFormElement>('form[data-form="server"]');
+  const previousImportForm = root.querySelector<HTMLFormElement>('form[data-form="ssh-import"]');
   const previousPasswordForm = root.querySelector<HTMLFormElement>('form[data-form="ssh-password"]');
   const settingsScroll = root.querySelector<HTMLElement>(".modal-settings")?.scrollTop;
   const previousContent = root.querySelector<HTMLElement>(".dock-main") ?? root.querySelector<HTMLElement>(".content-area");
@@ -34,6 +35,7 @@ export function render(): void {
   root.innerHTML = quickMode ? renderQuickShell() : `${renderTitlebar()}${state.loading ? renderLoading() : renderShell()}`;
   restoreConnectionForm(root, previousConnectionForm);
   restoreConnectionForm(root, previousPasswordForm);
+  restoreConnectionForm(root, previousImportForm);
   const nextSettings = root.querySelector<HTMLElement>(".modal-settings");
   if (nextSettings && settingsScroll !== undefined) nextSettings.scrollTop = settingsScroll;
   const nextContent = root.querySelector<HTMLElement>(".dock-main") ?? root.querySelector<HTMLElement>(".content-area");
@@ -168,6 +170,7 @@ export function renderServerRail(): string {
 }
 
 export function renderSidebar(): string {
+  if (activeServer()?.authMethod === "openSsh") return `<aside class="sidebar"><div class="sidebar-section nav-section"><div class="section-label">OpenSSH connection</div><button class="nav-item active" data-view="terminal">${icon("terminal")}<span>Terminal</span></button><p class="field-hint">Uses your SSH config, including routing and authentication. Graphical file and server tools need a managed connection.</p></div>${renderSidebarBottom()}</aside>`;
   const nav = [
     ["terminal", "Terminal", "terminal"],
     ["files", "Files", "files"],
@@ -185,9 +188,9 @@ export function renderSidebar(): string {
     ["tunnels", "SSH tunnels", "network"],
     ["administration", "Administration", "settings"],
   ] as const;
-  const unsupported = (view: View): boolean => Boolean(unavailableToolReason(view, activeCapabilities()));
+  const unsupported = (view: View): boolean => Boolean(unavailableToolReason(view, activeCapabilities(), activeServer()?.authMethod));
   return `<aside class="sidebar">
-    <div class="sidebar-section nav-section"><div class="section-label">Connection tools</div>${nav.map(([view, label, iconName]) => `<button class="nav-item ${state.activeView === view ? "active" : ""}" data-view="${view}" title="${unavailableToolReason(view, activeCapabilities()) ?? label}" aria-label="${label}" ${!activeServerIsConnected() || unsupported(view) ? "disabled" : ""}>${icon(iconName)}<span>${label}</span>${unsupported(view) ? `<small>Unavailable</small>` : ""}</button>`).join("")}</div>
+    <div class="sidebar-section nav-section"><div class="section-label">Connection tools</div>${nav.map(([view, label, iconName]) => `<button class="nav-item ${state.activeView === view ? "active" : ""}" data-view="${view}" title="${unavailableToolReason(view, activeCapabilities(), activeServer()?.authMethod) ?? label}" aria-label="${label}" ${!activeServerIsConnected() || unsupported(view) ? "disabled" : ""}>${icon(iconName)}<span>${label}</span>${unsupported(view) ? `<small>Unavailable</small>` : ""}</button>`).join("")}</div>
     ${renderSidebarBottom()}
   </aside>`;
 }
@@ -204,7 +207,7 @@ export function renderServerItem(server: ServerProfile): string {
   const connected = connectedServerIds.has(server.id) || hasInteractiveSession(server.id);
   const tooltip = `${server.name}\n${server.host}`;
   return `<div class="server-item ${server.id === state.activeServerId ? "active" : ""}" data-server-id="${escapeHtml(server.id)}" role="button" tabindex="0" aria-label="Open ${escapeHtml(server.name)} at ${escapeHtml(server.host)}" title="${escapeHtml(tooltip)}">
-    <span class="server-avatar">${escapeHtml(initials)}</span><span class="server-item-copy"><strong>${server.favorite ? `${icon("star")} ` : ""}${escapeHtml(server.name)}</strong><small>${escapeHtml(server.username)}@${escapeHtml(server.host)}</small></span><span class="server-item-actions"><button class="server-action" data-server-action="new-tab" data-server-id="${escapeHtml(server.id)}" aria-label="Open another ${escapeHtml(server.name)} workspace" title="Open another workspace">${icon("plus")}</button><button class="server-action" data-server-action="duplicate" data-server-id="${escapeHtml(server.id)}" aria-label="Duplicate ${escapeHtml(server.name)}" title="Duplicate server">${icon("copy")}</button><button class="server-action" data-server-action="edit" data-server-id="${escapeHtml(server.id)}" aria-label="Edit ${escapeHtml(server.name)}" title="Edit connection">${icon("edit")}</button><button class="server-action server-action-delete" data-server-action="delete" data-server-id="${escapeHtml(server.id)}" aria-label="Delete ${escapeHtml(server.name)}" title="Delete server">${icon("trash")}</button></span><span class="connection-dot ${connected ? "online" : ""}"></span>
+    <span class="server-avatar">${escapeHtml(initials)}</span><span class="server-item-copy"><strong>${server.favorite ? `${icon("star")} ` : ""}${escapeHtml(server.name)}</strong><small>${server.authMethod === "openSsh" ? `OpenSSH · ${escapeHtml(server.openSsh?.alias || server.host)}` : `${escapeHtml(server.username)}@${escapeHtml(server.host)}`}</small></span><span class="server-item-actions"><button class="server-action" data-server-action="new-tab" data-server-id="${escapeHtml(server.id)}" aria-label="Open another ${escapeHtml(server.name)} workspace" title="Open another workspace">${icon("plus")}</button><button class="server-action" data-server-action="duplicate" data-server-id="${escapeHtml(server.id)}" aria-label="Duplicate ${escapeHtml(server.name)}" title="Duplicate server">${icon("copy")}</button><button class="server-action" data-server-action="edit" data-server-id="${escapeHtml(server.id)}" aria-label="Edit ${escapeHtml(server.name)}" title="Edit connection">${icon("edit")}</button><button class="server-action server-action-delete" data-server-action="delete" data-server-id="${escapeHtml(server.id)}" aria-label="Delete ${escapeHtml(server.name)}" title="Delete server">${icon("trash")}</button></span><span class="connection-dot ${connected ? "online" : ""}" title="${server.authMethod === "openSsh" && connected ? "OpenSSH process running; authentication appears in the terminal" : connected ? "Connected" : "Idle"}"></span>
   </div>`;
 }
 
@@ -241,7 +244,9 @@ export function renderConnectedContent(): string {
   if (!server) return renderWelcome();
   const titles: Record<View, [string, string]> = {
     dashboard: ["Overview", "A clear read on how this machine is doing."],
-    terminal: ["Terminal", "A real interactive shell, one keystroke away."],
+    terminal: server.authMethod === "openSsh"
+      ? ["OpenSSH terminal", `Using ${server.openSsh?.alias || server.host}. Authentication and host-key questions appear in the terminal. Config changes apply on reconnect.`]
+      : ["Terminal", "A real interactive shell, one keystroke away."],
     processes: ["Processes", "See what is using the machine right now."],
     services: ["Systemd services", "Keep systemd units healthy and moving."],
     files: ["Files", "Browse, edit, and move files over SFTP."],
@@ -260,7 +265,7 @@ export function renderConnectedContent(): string {
   const snapshotNotice = state.activeView === "dashboard"
     ? `<span class="overview-snapshot-note">${icon("info")} Snapshot metrics · not live</span>`
     : "";
-  return `<div class="page-head"><div><div class="eyebrow">${escapeHtml(server.name)} <span class="eyebrow-separator">/</span> ${title}</div><h1>${title}</h1><p>${subtitle}</p></div><div class="page-actions">${snapshotNotice}${state.activeView === "terminal" ? "" : `<button class="button button-quiet ${dockShown() ? "active" : ""}" data-action="toggle-dock" title="Terminals beside this view (Ctrl+\`)">${icon("terminalSmall")} Terminal</button>`}<button class="button button-quiet" data-action="refresh">${icon("refresh")} Refresh</button></div></div>${renderView()}`;
+  return `<div class="page-head"><div><div class="eyebrow">${escapeHtml(server.name)} <span class="eyebrow-separator">/</span> ${title}</div><h1>${title}</h1><p>${escapeHtml(subtitle)}</p></div><div class="page-actions">${snapshotNotice}${state.activeView === "terminal" ? "" : `<button class="button button-quiet ${dockShown() ? "active" : ""}" data-action="toggle-dock" title="Terminals beside this view (Ctrl+\`)">${icon("terminalSmall")} Terminal</button>`}<button class="button button-quiet" data-action="refresh">${icon("refresh")} Refresh</button></div></div>${renderView()}`;
 }
 
 export function renderView(): string {
