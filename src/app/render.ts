@@ -18,6 +18,7 @@ import { groupExited, paneCount, renderDashboard, renderTabStrip, renderFiles, r
 import { scrollCommandResultsIntoView, scrollContainerLogsIntoView, viewTransitionIsCurrent } from "./workspace";
 
 export function render(): void {
+  const settingsScroll = root.querySelector<HTMLElement>(".modal-settings")?.scrollTop;
   const previousContent = root.querySelector<HTMLElement>(".dock-main") ?? root.querySelector<HTMLElement>(".content-area");
   const previousServerList = root.querySelector<HTMLElement>(".server-list");
   const previousNavigation = root.querySelector<HTMLElement>(".nav-section");
@@ -27,6 +28,8 @@ export function render(): void {
   const nextLocation = state.activeWorkspaceTabId ? `${state.activeWorkspaceTabId}:${state.activeView}` : "welcome";
   root.dataset.theme = state.darkMode ? "dark" : "light";
   root.innerHTML = quickMode ? renderQuickShell() : `${renderTitlebar()}${state.loading ? renderLoading() : renderShell()}`;
+  const nextSettings = root.querySelector<HTMLElement>(".modal-settings");
+  if (nextSettings && settingsScroll !== undefined) nextSettings.scrollTop = settingsScroll;
   const nextContent = root.querySelector<HTMLElement>(".dock-main") ?? root.querySelector<HTMLElement>(".content-area");
   const nextServerList = root.querySelector<HTMLElement>(".server-list");
   const nextNavigation = root.querySelector<HTMLElement>(".nav-section");

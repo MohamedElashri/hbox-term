@@ -315,6 +315,12 @@ export async function runAction(action: string, target: HTMLElement = document.c
       if (key === "source" || key === "issues" || key === "releases" || key === "license") await openUrl(BRAND[key]).catch(setError);
       break;
     }
+    case "settings-jump": {
+      const section = root.querySelector<HTMLElement>(`#${target.dataset.settingsTarget}`);
+      section?.scrollIntoView({ block: "start" });
+      section?.focus({ preventScroll: true });
+      break;
+    }
     case "credential-settings": state.credentialSettingsError = ""; state.credentialSettingsNotice = ""; state.modal = "security"; render(); break;
     case "change-master-password": state.credentialSettingsError = ""; state.credentialSettingsNotice = ""; state.modal = "change-password"; render(); break;
     case "reset-credentials": state.credentialSettingsError = ""; state.credentialSettingsNotice = ""; state.modal = "reset-credentials"; render(); break;
