@@ -76,5 +76,5 @@ and license information. On macOS, **Ternway → About Ternway** opens the same 
 
 Import aliases as **OpenSSH config** connections to keep routing, authentication and advanced
 rules linked to the source file. They open in Ternway's terminal using the system SSH client.
-Managed connections continue to provide graphical file and server tools.
+Files and tunnels share the authenticated OpenSSH connection. Managed connections also provide server administration tools.
 [Compatibility details](docs/OPENSSH.md).

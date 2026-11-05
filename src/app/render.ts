@@ -170,7 +170,11 @@ export function renderServerRail(): string {
 }
 
 export function renderSidebar(): string {
-  if (activeServer()?.authMethod === "openSsh") return `<aside class="sidebar"><div class="sidebar-section nav-section"><div class="section-label">OpenSSH connection</div><button class="nav-item active" data-view="terminal">${icon("terminal")}<span>Terminal</span></button><p class="field-hint">Uses your SSH config, including routing and authentication. Graphical file and server tools need a managed connection.</p></div>${renderSidebarBottom()}</aside>`;
+  if (activeServer()?.authMethod === "openSsh") {
+    const ready = connectedServerIds.has(activeServer()!.id);
+    const shared = activeServer()!.openSsh?.shareConnection !== false;
+    return `<aside class="sidebar"><div class="sidebar-section nav-section"><div class="section-label">OpenSSH connection</div>${[["terminal", "Terminal", "terminal"], ["files", "Files", "files"], ["tunnels", "SSH tunnels", "network"]].map(([view, label, glyph]) => `<button class="nav-item ${state.activeView === view ? "active" : ""}" data-view="${view}" ${view !== "terminal" && !ready ? "disabled" : ""}>${icon(glyph as Parameters<typeof icon>[0])}<span>${label}</span></button>`).join("")}<p class="field-hint">${!shared ? "Enable connection sharing in the connection editor to use files and tunnels." : ready ? "Terminal, files and tunnels share this authenticated connection." : "Authenticate in the terminal to enable files and tunnels."}</p></div>${renderSidebarBottom()}</aside>`;
+  }
   const nav = [
     ["terminal", "Terminal", "terminal"],
     ["files", "Files", "files"],

@@ -2,6 +2,7 @@
 mod agent_transport;
 mod appimage;
 mod config;
+mod child_process;
 mod credentials;
 mod disk;
 mod editor;
@@ -10,10 +11,13 @@ mod local_pty;
 mod log_stream;
 mod models;
 mod openssh;
+mod openssh_pool;
 mod providers;
 mod pty_output;
 mod quick;
 mod remote_edit;
+mod remote_fs;
+mod sftp_wire;
 mod remote_integration;
 mod ssh;
 mod ssh_config;
@@ -1243,6 +1247,11 @@ fn cancel_operation(operation_id: String) -> Result<(), AppError> {
 }
 
 #[tauri::command(async)]
+fn shared_ssh_ready(state: State<'_, AppState>, server_id: String) -> Result<bool, AppError> {
+    Ok(openssh_pool::ready(&state.store.get_server(&server_id)?))
+}
+
+#[tauri::command(async)]
 fn disconnect_server(state: State<'_, AppState>, server_id: String) -> Result<(), AppError> {
     // Explicit disconnect also closes independent forwarding sessions for this profile.
     // Tunnel definitions remain saved and can be started again later.
@@ -1856,6 +1865,7 @@ pub fn run() {
             duplicate_server,
             cancel_operation,
             disconnect_server,
+            shared_ssh_ready,
             connect_server,
             replace_host_key,
             accept_host_key,
@@ -1936,6 +1946,7 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building ternway application")
         .run(|app, event| {
+            if matches!(event, tauri::RunEvent::Exit) { openssh_pool::stop_all(); }
             if let tauri::RunEvent::ExitRequested { code, api, .. } = event {
                 // Native Quit must await the same session save as closing the main window.
                 // Restarts use a distinct exit code and save from the updater before relaunch.

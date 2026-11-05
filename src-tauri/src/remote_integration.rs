@@ -52,7 +52,7 @@ pub fn prepare(client: &SshClient) -> Result<String, String> {
 }
 
 /// `mkdir -p` below `home` (existing directories are fine).
-fn create_dirs(sftp: &ssh2::Sftp, home: &Path, dir: &Path) {
+fn create_dirs(sftp: &crate::remote_fs::RemoteFs, home: &Path, dir: &Path) {
     let mut current = PathBuf::from(home);
     for component in dir.strip_prefix(home).unwrap_or(dir).components() {
         current.push(component);

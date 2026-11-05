@@ -3205,7 +3205,7 @@ fn permissions_string(value: u32) -> String {
 }
 
 fn delete_remote(
-    sftp: &ssh2::Sftp,
+    sftp: &crate::remote_fs::RemoteFs,
     path: &Path,
     cancellation: Option<&Arc<AtomicBool>>,
 ) -> Result<(), String> {
@@ -3230,7 +3230,7 @@ fn delete_remote(
 }
 
 fn upload_directory(
-    sftp: &ssh2::Sftp,
+    sftp: &crate::remote_fs::RemoteFs,
     source: &Path,
     remote_root: &Path,
     app: &AppHandle,
@@ -3278,7 +3278,7 @@ fn upload_directory(
 }
 
 fn upload_file(
-    sftp: &ssh2::Sftp,
+    sftp: &crate::remote_fs::RemoteFs,
     source: &Path,
     destination: &Path,
     app: &AppHandle,
@@ -3395,7 +3395,7 @@ fn upload_file(
 }
 
 fn upload_conflicts(
-    sftp: &ssh2::Sftp,
+    sftp: &crate::remote_fs::RemoteFs,
     source: &Path,
     destination: &Path,
     source_is_directory: bool,
@@ -3422,7 +3422,7 @@ fn upload_conflicts(
 }
 
 fn record_upload_conflict(
-    sftp: &ssh2::Sftp,
+    sftp: &crate::remote_fs::RemoteFs,
     destination: &Path,
     paths: &mut Vec<String>,
     count: &mut usize,
@@ -3436,11 +3436,11 @@ fn record_upload_conflict(
 }
 
 fn rename_staging(
-    sftp: &ssh2::Sftp,
+    sftp: &crate::remote_fs::RemoteFs,
     temporary_path: &Path,
     destination: &Path,
     overwrite: bool,
-) -> Result<(), ssh2::Error> {
+) -> Result<(), crate::remote_fs::FsError> {
     // Many SFTP servers do not implement the posix-rename@openssh.com extension
     // behind ATOMIC/NATIVE, and some do not implement OVERWRITE either. They
     // answer those renames with a generic SSH_FX_FAILURE (SFTP error 4), which
@@ -3483,7 +3483,7 @@ fn rename_staging(
     }
 }
 
-fn ensure_remote_directory(sftp: &ssh2::Sftp, path: &Path) -> Result<(), String> {
+fn ensure_remote_directory(sftp: &crate::remote_fs::RemoteFs, path: &Path) -> Result<(), String> {
     match sftp.mkdir(path, 0o755) {
         Ok(()) => Ok(()),
         Err(mkdir_error) => match sftp.stat(path) {
@@ -3501,7 +3501,7 @@ fn ensure_remote_directory(sftp: &ssh2::Sftp, path: &Path) -> Result<(), String>
 }
 
 fn remote_totals(
-    sftp: &ssh2::Sftp,
+    sftp: &crate::remote_fs::RemoteFs,
     path: &Path,
     is_dir: bool,
     cancellation: Option<&Arc<AtomicBool>>,
@@ -3532,7 +3532,7 @@ fn remote_totals(
 }
 
 fn download_directory(
-    sftp: &ssh2::Sftp,
+    sftp: &crate::remote_fs::RemoteFs,
     source: &Path,
     local_root: &Path,
     app: &AppHandle,
@@ -3586,7 +3586,7 @@ fn download_directory(
 }
 
 fn download_file(
-    sftp: &ssh2::Sftp,
+    sftp: &crate::remote_fs::RemoteFs,
     source: &Path,
     destination: &Path,
     app: &AppHandle,

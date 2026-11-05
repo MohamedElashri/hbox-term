@@ -18,10 +18,16 @@ impl Default for AuthMethod {
     }
 }
 
+fn default_shared_ssh() -> bool {
+    true
+}
+
 /// A live reference, never a flattened copy of OpenSSH configuration.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct OpenSshConfig {
+    #[serde(default = "default_shared_ssh")]
+    pub share_connection: bool,
     pub alias: String,
     /// None lets OpenSSH load both its normal user and system configuration.
     pub config_path: Option<String>,

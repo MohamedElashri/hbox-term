@@ -202,7 +202,7 @@ export async function refreshSnapshot(loadView = true): Promise<void> {
 
 export async function setView(view: View): Promise<void> {
   if (!state.activeServerId) return;
-  if (activeServer()?.authMethod === "openSsh") view = "terminal";
+  if (activeServer()?.authMethod === "openSsh" && (view !== "terminal" && (!["files", "tunnels"].includes(view) || !connectedServerIds.has(state.activeServerId)))) view = "terminal";
   cancelCurrentOperation();
   state.navigationVersion += 1;
   if (state.activeView !== view) clearCommandResults();

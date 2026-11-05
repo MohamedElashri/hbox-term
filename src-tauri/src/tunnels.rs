@@ -36,7 +36,12 @@ pub fn start(store: Store, tunnel: TunnelConfig) -> Result<TunnelStatus, String>
         );
     let id = tunnel.id.clone();
     thread::spawn(move || {
-        let result = if tunnel.kind == "remote" {
+        let result = if store
+            .get_server(&tunnel.server_id)
+            .is_ok_and(|p| p.auth_method == crate::models::AuthMethod::OpenSsh)
+        {
+            run_native(&store, &tunnel, &running)
+        } else if tunnel.kind == "remote" {
             run_remote(&store, &tunnel, &running)
         } else {
             run_local(&store, &tunnel, &running)
@@ -94,6 +99,57 @@ pub fn statuses(ids: &[String]) -> Vec<TunnelStatus> {
                 })
         })
         .collect()
+}
+
+fn forward_specification(tunnel: &TunnelConfig) -> Result<String, String> {
+    fn host(value: &str) -> Result<String, String> {
+        if value.is_empty() || value.contains(['[', ']', '\n', '\r', '\0']) {
+            return Err("Invalid forwarding host".into());
+        }
+        Ok(if value.contains(':') {
+            format!("[{value}]")
+        } else {
+            value.into()
+        })
+    }
+    let bind = if tunnel.kind == "socks" {
+        // Use the validated numeric address rather than resolving a second time.
+        loopback_bind_addresses(&tunnel.bind_host, tunnel.bind_port)?[0]
+            .ip()
+            .to_string()
+    } else {
+        tunnel.bind_host.clone()
+    };
+    let prefix = format!("{}:{}", host(&bind)?, tunnel.bind_port);
+    if tunnel.kind == "socks" {
+        Ok(prefix)
+    } else {
+        Ok(format!(
+            "{prefix}:{}:{}",
+            host(&tunnel.target_host)?,
+            tunnel.target_port
+        ))
+    }
+}
+
+fn run_native(
+    store: &Store,
+    tunnel: &TunnelConfig,
+    running: &Arc<AtomicBool>,
+) -> Result<(), String> {
+    let profile = store.get_server(&tunnel.server_id)?;
+    let specification = forward_specification(tunnel)?;
+    crate::openssh_pool::forward(&profile, &tunnel.kind, &specification, false)?;
+    while running.load(Ordering::SeqCst) {
+        if !crate::openssh_pool::ready(&profile) {
+            return Err("Shared SSH connection closed".into());
+        }
+        thread::sleep(Duration::from_millis(250));
+    }
+    if crate::openssh_pool::ready(&profile) {
+        crate::openssh_pool::forward(&profile, &tunnel.kind, &specification, true)?;
+    }
+    Ok(())
 }
 
 fn run_local(
@@ -167,7 +223,7 @@ fn run_remote(
     let mut client = SshClient::connect_with_cancellation(&profile, None, store)?;
     client.set_nonblocking()?;
     let (mut listener, _) = client
-        .session_mut()
+        .session_mut()?
         .channel_forward_listen(tunnel.bind_port, Some(&tunnel.bind_host), None)
         .map_err(|error| format!("Could not request remote forwarding: {error}"))?;
     while running.load(Ordering::SeqCst) {

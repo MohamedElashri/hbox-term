@@ -18,7 +18,7 @@ See the [OpenSSH client manual](https://man.openbsd.org/ssh) and
 | User and system defaults | Normal OpenSSH defaults; custom files use `-F` | Imported supported fields |
 | Authentication and MFA | Prompts in the terminal; configured agents/providers | Ternway password vault, key or agent |
 | ProxyJump, ProxyCommand, dynamic rules | OpenSSH evaluates them when connecting | Unsupported import settings require manual setup |
-| Graphical file and server tools | Not yet available | Available according to host capabilities |
+| Graphical tools | Files and tunnels share the authenticated connection | Additional server tools according to host capabilities |
 | Remote shell integration and split cwd | Determined by the original config | Ternway integration when enabled |
 
 Leave the config file blank for normal user and system configuration. Linking the usual
@@ -30,10 +30,21 @@ import. Git service aliases remain unchecked. Wildcard-only or connection-depend
 files may not provide a discoverable alias; add a connection by alias or hostname manually.
 Discovery expands local Include tokens `%d`, `%u` and `%%` without executing commands.
 
-Configured commands and forwarding take effect when a terminal opens. Closing it ends
-Ternway's SSH process; background connections requested by ControlPersist or other config
-hooks retain OpenSSH's normal lifetime. Ternway does not terminate shared external masters.
-Changes to the file apply to the next terminal or reconnect.
+Configured commands and forwarding take effect when a terminal opens. By default, Ternway
+uses a private, app-owned ControlMaster socket: terminals, SFTP and local/remote/SOCKS
+forwarding reuse that authenticated transport. File operations never silently initiate a
+second login or re-evaluate config hooks. Authenticate in the terminal first.
+
+Sharing overrides ControlMaster, ControlPath, ControlPersist and ForkAfterAuthentication.
+Choose **Use configured multiplexing** in the connection editor for the original terminal-only
+behavior. External masters are never terminated. Closing a terminal leaves an owned master
+available for up to five idle minutes; Disconnect and application exit close owned masters.
+Config edits apply after disconnect/reconnect. A crashed app's idle masters expire automatically.
+
+The SFTP adapter uses bounded SFTP v3 binary packets over the OpenSSH subsystem channel;
+SSH encryption, authentication and host trust remain with the system client. Paths containing
+spaces, newlines and Unicode are supported. Atomic overwrites require the server's
+posix-rename extension.
 
 Compatibility follows the installed OpenSSH version. The macOS client tested here fails
 with ProxyJump when a custom config filename contains spaces, including when invoked outside

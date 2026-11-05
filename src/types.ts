@@ -7,7 +7,7 @@ export interface ServerProfile {
   username: string;
   port: number;
   authMethod: AuthMethod;
-  openSsh?: { alias: string; configPath?: string };
+  openSsh?: { alias: string; configPath?: string; shareConnection?: boolean };
   identityId?: string;
   keyPath?: string;
   jumpHostId?: string;
