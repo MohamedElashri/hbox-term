@@ -10,6 +10,11 @@ pub(crate) struct SshFixture {
     pub port: u16,
 }
 impl SshFixture {
+    pub fn stop(&mut self) {
+        let _ = self.server.kill();
+        let _ = self.server.wait();
+    }
+
     pub fn start(mode: &str) -> Self {
         let python = std::env::var("TERNWAY_SSH_TEST_PYTHON")
             .expect("Set TERNWAY_SSH_TEST_PYTHON to the SSH fixture virtualenv's Python");

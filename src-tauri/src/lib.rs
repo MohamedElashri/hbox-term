@@ -1247,6 +1247,35 @@ fn cancel_operation(operation_id: String) -> Result<(), AppError> {
 }
 
 #[tauri::command(async)]
+fn connection_health(
+    state: State<'_, AppState>,
+    server_ids: Vec<String>,
+    session_ids: Vec<String>,
+) -> Result<serde_json::Value, AppError> {
+    if server_ids.len() > 64 || session_ids.len() > 512 {
+        return Err("Too many sessions to check at once".to_string().into());
+    }
+    let (sessions, active_servers) = {
+        let terminals = state.terminals.lock().map_err(|e| e.to_string())?;
+        let sessions: std::collections::HashMap<_, _> = session_ids.into_iter()
+            .map(|id| { let live = terminals.contains_key(&id); (id, live) }).collect();
+        let servers: std::collections::HashSet<_> = terminals.values()
+            .map(|terminal| terminal.server_id.clone()).collect();
+        (sessions, servers)
+    };
+    let mut connections = std::collections::HashMap::new();
+    for id in server_ids {
+        let connected = match state.store.get_server(&id) {
+            Ok(profile) if profile.auth_method == models::AuthMethod::OpenSsh => openssh_pool::ready(&profile),
+            Ok(_) => active_servers.contains(&id) || ssh::cached_is_connected(&id),
+            Err(_) => false,
+        };
+        connections.insert(id, connected);
+    }
+    Ok(serde_json::json!({ "sessions": sessions, "connections": connections }))
+}
+
+#[tauri::command(async)]
 fn shared_ssh_ready(state: State<'_, AppState>, server_id: String) -> Result<bool, AppError> {
     Ok(openssh_pool::ready(&state.store.get_server(&server_id)?))
 }
@@ -1866,6 +1895,7 @@ pub fn run() {
             cancel_operation,
             disconnect_server,
             shared_ssh_ready,
+            connection_health,
             connect_server,
             replace_host_key,
             accept_host_key,

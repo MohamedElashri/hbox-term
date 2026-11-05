@@ -35,7 +35,8 @@ uses a private, app-owned ControlMaster socket: terminals, SFTP and local/remote
 forwarding reuse that authenticated transport. File operations never silently initiate a
 second login or re-evaluate config hooks. Authenticate in the terminal first.
 
-Sharing overrides ControlMaster, ControlPath, ControlPersist and ForkAfterAuthentication.
+Sharing overrides ControlMaster, ControlPath, ControlPersist and ForkAfterAuthentication,
+and uses ServerAliveInterval=15 / ServerAliveCountMax=3 to detect broken transports.
 Choose **Use configured multiplexing** in the connection editor for the original terminal-only
 behavior. External masters are never terminated. Closing a terminal leaves an owned master
 available for up to five idle minutes; Disconnect and application exit close owned masters.
@@ -59,3 +60,17 @@ time, RemoteCommand, strict host-key checking, password input without echo, live
 PTY resize and closing the correct remote session. Discovery and save tests verify that config
 commands do not execute. Hardware devices, real password managers and external network policies
 still need separate live checks.
+
+## Session recovery
+
+Session labels distinguish opening, authentication, authenticated readiness and disconnects.
+Focus, visibility and network changes trigger health checks of existing sessions. They never
+start a login or replay terminal input. Shared OpenSSH detects an unresponsive transport
+with encrypted keepalives; managed sessions also send keepalives. OS/browser network hints
+alone do not prove a server is unreachable.
+
+Disconnected remote panes retain their output. **Reconnect** opens a fresh session and does
+not repeat a pane command (including container/editor commands). OpenSSH's configured login
+hooks and RemoteCommand still run when you explicitly reconnect. Terminal processes do not
+survive disconnect, application exit or restart; use tmux or another server-side multiplexer
+when process survival is required.

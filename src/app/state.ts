@@ -180,7 +180,7 @@ export const LOG_LINE_OPTIONS = [100, 250, 300, 500, 1000] as const;
 export const activeServer = (): ServerProfile | undefined => state.snapshot.servers.find((server) => server.id === state.activeServerId);
 export const activeWorkspaceTab = (): WorkspaceTab | undefined => state.openServerTabs.find((tab) => tab.id === state.activeWorkspaceTabId);
 export const activeCapabilities = (): ServerCapabilities | null => state.dashboard?.profile?.capabilities ?? null;
-export const hasInteractiveSession = (serverId = state.activeServerId): boolean => Boolean(serverId) && state.terminalTabs.some((tab) => tab.serverId === serverId && Boolean(tab.sessionId) && !tab.closed);
+export const hasInteractiveSession = (serverId = state.activeServerId): boolean => Boolean(serverId) && state.terminalTabs.some((tab) => tab.serverId === serverId && Boolean(tab.sessionId) && !tab.closed && !tab.connecting && (state.snapshot.servers.find(server => server.id === serverId)?.authMethod !== "openSsh" || tab.phase === "ready"));
 export const activeTerminalTabs = (): TerminalTab[] => state.terminalTabs.filter((tab) => tab.workspaceTabId === state.activeWorkspaceTabId);
 export const activeTerminalGroups = (): TerminalGroup[] => state.terminalGroups.filter((group) => group.workspaceTabId === state.activeWorkspaceTabId);
 export const terminalGroupOf = (terminalId: string | null): TerminalGroup | undefined => {

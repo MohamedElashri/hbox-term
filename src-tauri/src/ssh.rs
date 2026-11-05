@@ -1267,6 +1267,33 @@ pub fn cancel_operation(operation_id: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Observes an existing cached transport without creating a connection or running a command.
+pub(crate) fn cached_is_connected(server_id: &str) -> bool {
+    let client = connections()
+        .lock()
+        .ok()
+        .and_then(|map| map.get(server_id).map(|cached| cached.client.clone()));
+    let Some(client) = client else {
+        return false;
+    };
+    let result = match client.try_lock() {
+        Ok(mut client) => {
+            let was_blocking = client.session.as_ref().is_some_and(Session::is_blocking);
+            if let Some(session) = &client.session {
+                session.set_blocking(false);
+            }
+            let ready = client.connection_is_usable();
+            if let Some(session) = &client.session {
+                session.set_blocking(was_blocking);
+            }
+            ready
+        }
+        Err(TryLockError::WouldBlock) => true,
+        Err(_) => false,
+    };
+    result
+}
+
 pub fn disconnect_server(server_id: &str) -> Result<(), String> {
     crate::openssh_pool::disconnect(server_id);
     let cached = connections()

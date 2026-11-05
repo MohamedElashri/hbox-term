@@ -6,7 +6,7 @@ use std::io::{ErrorKind, Read, Write};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpListener, TcpStream, ToSocketAddrs};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Arc, Mutex, OnceLock,
+    Arc, Condvar, Mutex, OnceLock,
 };
 use std::thread;
 use std::time::Duration;
@@ -14,6 +14,7 @@ use std::time::Duration;
 struct Runtime {
     running: Arc<AtomicBool>,
     error: Arc<Mutex<Option<String>>>,
+    done: Arc<(Mutex<bool>, Condvar)>,
 }
 static RUNTIMES: OnceLock<Mutex<HashMap<String, Runtime>>> = OnceLock::new();
 fn runtimes() -> &'static Mutex<HashMap<String, Runtime>> {
@@ -24,6 +25,7 @@ pub fn start(store: Store, tunnel: TunnelConfig) -> Result<TunnelStatus, String>
     stop(&tunnel.id)?;
     let running = Arc::new(AtomicBool::new(true));
     let error = Arc::new(Mutex::new(None));
+    let done = Arc::new((Mutex::new(false), Condvar::new()));
     runtimes()
         .lock()
         .map_err(|_| "Tunnel state lock was poisoned".to_string())?
@@ -32,6 +34,7 @@ pub fn start(store: Store, tunnel: TunnelConfig) -> Result<TunnelStatus, String>
             Runtime {
                 running: running.clone(),
                 error: error.clone(),
+                done: done.clone(),
             },
         );
     let id = tunnel.id.clone();
@@ -52,6 +55,10 @@ pub fn start(store: Store, tunnel: TunnelConfig) -> Result<TunnelStatus, String>
             }
         }
         running.store(false, Ordering::SeqCst);
+        if let Ok(mut finished) = done.0.lock() {
+            *finished = true;
+            done.1.notify_all();
+        }
     });
     Ok(TunnelStatus {
         id,
@@ -61,12 +68,25 @@ pub fn start(store: Store, tunnel: TunnelConfig) -> Result<TunnelStatus, String>
 }
 
 pub fn stop(id: &str) -> Result<(), String> {
-    if let Some(runtime) = runtimes()
+    let runtime = runtimes()
         .lock()
-        .map_err(|_| "Tunnel state lock was poisoned".to_string())?
+        .map_err(|_| "Tunnel state lock was poisoned")?
         .get(id)
-    {
-        runtime.running.store(false, Ordering::SeqCst);
+        .map(|state| (state.running.clone(), state.done.clone()));
+    if let Some((running, done)) = runtime {
+        running.store(false, Ordering::SeqCst);
+        // Release the old listener before a restart can request the same forwarding spec.
+        let finished = done
+            .0
+            .lock()
+            .map_err(|_| "Tunnel completion lock was poisoned")?;
+        let (finished, _) = done
+            .1
+            .wait_timeout_while(finished, Duration::from_secs(6), |value| !*value)
+            .map_err(|_| "Tunnel completion lock was poisoned")?;
+        if !*finished {
+            return Err("Tunnel is still stopping; try again shortly".into());
+        }
     }
     Ok(())
 }

@@ -1,3 +1,4 @@
+import { freshSessionRequest } from "./connection-lifecycle";
 import { invoke } from "@tauri-apps/api/core";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
@@ -11,7 +12,7 @@ import { confirm, requestTextInput } from "./modals";
 import { openPicker, type PaletteItem } from "./palette";
 import { layoutPanes, leaf, leaves, mapLeaves, MIN_RATIO, neighbor, removeLeaf, replaceLeaf, splitLeaf, type Divider, type FocusDirection, type PaneNode, type Rect, type SplitDirection } from "./panes";
 import { render } from "./render";
-import { invokeCommand, setError } from "./session";
+import { cancelCurrentOperation, invokeCommand, setError } from "./session";
 import { activeDock, activeTerminalGroup, activeTerminalGroups, activeTerminalTabByWorkspace, connectedServerIds, dockShown, isLocalWorkspace, LOCAL_SERVER_ID, LOCAL_WORKSPACE_ID, root, state, terminalDocks, terminalGroupOf, terminalInputChains, terminalSurfaces, useWebglRenderer } from "./state";
 import { TerminalSurface, type TerminalAppearance } from "./terminal-surface";
 import { showToast } from "./toasts";
@@ -58,7 +59,7 @@ export function createTerminalSurface(tab: TerminalTab): TerminalSurface {
     onFinished: (command, seconds) => notifyCommandFinished(tab, command.exitCode ?? 0, seconds),
     onInput: (data) => {
       // After the process exits, any key closes the pane (Ghostty's wait-after-command).
-      if (tab.closed) { if (!tab.connecting) void closeTerminal(tab.id); return; }
+      if (tab.closed) { if (!tab.connecting && tab.serverId === LOCAL_SERVER_ID) void closeTerminal(tab.id); return; }
       const group = terminalGroupOf(tab.id);
       if (group?.broadcast) {
         for (const id of leaves(group.root)) {
@@ -74,11 +75,13 @@ export function createTerminalSurface(tab: TerminalTab): TerminalSurface {
     },
     onAck: (bytes) => { if (tab.sessionId) void invoke("terminal_ack", { sessionId: tab.sessionId, bytes }).catch(() => undefined); },
     onClosed: (message) => {
-      tab.closed = true;
+      if (!state.terminalTabs.includes(tab) || tab.closed) return;
+      tab.closed = true; tab.connecting = false; tab.phase = "disconnected";
+      if (!state.terminalTabs.some(other => other !== tab && other.serverId === tab.serverId && !other.closed && !other.connecting)) connectedServerIds.delete(tab.serverId);
       finishRemoteEdit(tab);
-      if (!profileConfig(tab.profile).waitAfterCommand) { void closeTerminal(tab.id); return; }
+      if (tab.serverId === LOCAL_SERVER_ID && !profileConfig(tab.profile).waitAfterCommand) { void closeTerminal(tab.id); return; }
       surface.notice(message);
-      surface.term.write("\x1b[2mPress any key to close.\x1b[0m");
+      surface.term.write(tab.serverId === LOCAL_SERVER_ID ? "\x1b[2mPress any key to close.\x1b[0m" : "\x1b[2mReconnect opens a fresh session; previous commands are not replayed.\x1b[0m");
       render();
     },
   });
@@ -266,8 +269,8 @@ async function openTerminal(placement: Placement, command?: string, title?: stri
     group.zoomed = false;
   }
   // A split runs the given command (an editor) or a plain shell, even next to a container exec pane.
-  const tabCommand = command ?? (placement.kind === "replace" ? placement.tab.command : undefined);
-  const tab: TerminalTab = { id, serverId, workspaceTabId, groupId: group.id, profile, title: group.title, command: tabCommand, connecting: true, sessionId: id, remoteEditId: extra.remoteEditId };
+  const tabCommand = command;
+  const tab: TerminalTab = { id, serverId, workspaceTabId, groupId: group.id, profile, title: group.title, command: tabCommand, phase: local ? "launching" : "authenticating", connecting: true, sessionId: id, remoteEditId: extra.remoteEditId };
   const config = profileConfig(profile);
   const localRequest = { sessionId: id, cols, rows, cwd: localWorkingDirectory(placement, profile), command: tabCommand ?? config.command, env: config.env, shellIntegration: config.shellIntegration };
   if (placement.kind === "replace") disposeTerminalSurfaces([placement.tab]);
@@ -280,19 +283,26 @@ async function openTerminal(placement: Placement, command?: string, title?: stri
     try {
       const started = local
         ? await invoke<TerminalStarted>("start_local_terminal", { request: localRequest, onOutput: surface.output })
-        : await invokeCommand<TerminalStarted>("start_terminal", { request: { sessionId: id, serverId, cols, rows, command: tabCommand, shellIntegration: config.remoteShellIntegration && !tabCommand, cwd: remoteWorkingDirectory(placement, serverId) }, onOutput: surface.output });
-      if (!local && server?.authMethod !== "openSsh") connectedServerIds.add(serverId);
+        : await invokeCommand<TerminalStarted>("start_terminal", { request: { ...freshSessionRequest(id, serverId, cols, rows, config.remoteShellIntegration && !tabCommand, remoteWorkingDirectory(placement, serverId)), command: tabCommand }, onOutput: surface.output });
+      if (!state.terminalTabs.includes(tab)) {
+        await invoke("close_terminal", { sessionId: started.sessionId }).catch(() => undefined);
+        return;
+      }
+      if (!local && !tab.closed && server?.authMethod !== "openSsh") connectedServerIds.add(serverId);
       tab.sessionId = started.sessionId; tab.connecting = false;
+      if (!tab.closed) tab.phase = server?.authMethod === "openSsh" ? server.openSsh?.shareConnection === false ? "interactive" : "authenticating" : "ready";
       // The terminal may have been fitted to its real size while the session was opening.
       if (surface.cols !== cols || surface.rows !== rows) void invoke("terminal_resize", { request: { sessionId: tab.sessionId, cols: surface.cols, rows: surface.rows } }).catch(() => undefined);
       render();
     } catch (error) {
       if (error instanceof OperationCancelledError || errorText(error).toLowerCase().includes("operation cancelled")) {
+        tab.phase = "cancelled";
+        await invoke("close_terminal", { sessionId: id }).catch(() => undefined);
         disposeTerminalSurfaces([tab]);
         render();
         return;
       }
-      tab.connecting = false; tab.closed = true; surface.notice(`Unable to open terminal: ${errorText(error)}`); setError(error);
+      tab.phase = "failed"; tab.connecting = false; tab.closed = true; surface.notice(`Unable to open terminal: ${errorText(error)}`); setError(error);
     }
   };
   if (placement.kind === "restore") {
@@ -317,6 +327,7 @@ async function openTerminal(placement: Placement, command?: string, title?: stri
 export async function closeTerminal(tabId: string): Promise<void> {
   const tab = state.terminalTabs.find((item) => item.id === tabId);
   if (!tab) return;
+  if (tab.connecting && (!state.activeOperation || state.activeOperation.serverId === tab.serverId)) cancelCurrentOperation();
   if (tab.sessionId && !tab.closed) await invoke("close_terminal", { sessionId: tab.sessionId }).catch(() => undefined);
   disposeTerminalSurfaces([tab]);
   if (state.activeWorkspaceTabId && state.activeTerminalTabId) activeTerminalTabByWorkspace.set(state.activeWorkspaceTabId, state.activeTerminalTabId);
