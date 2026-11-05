@@ -26,7 +26,9 @@ Primary tooling references: [Tauri WebDriver](https://v2.tauri.app/develop/tests
 ## Restart and recovery
 
 Updater restart uses the same serial, token-scoped all-window save barrier as Quit.
-Every window confirms active work, flushes remote edits and saves before restart. A
+Every window confirms active work, flushes remote edits and saves before restart.
+Acknowledged windows freeze input until completion/cancellation, and new windows are
+blocked during shutdown so the saved set cannot change underneath it. A
 cancel, failed save, missing acknowledgement or two-minute deadline cancels the request;
 windows remain open. Old/duplicate replies cannot satisfy a new request or change its
 Quit/Restart intent. The Restart Ternway command is also available in the command palette.
@@ -71,10 +73,13 @@ values in source, chat, PR descriptions or logs. Private keys are not automatica
 exported from the local Keychain or uploaded to GitHub by these development checks.
 
 Current prerequisite audit: GitHub has the updater signing key, but Apple signing/API
-secrets are not yet configured. A valid local Developer ID identity is present. CI
-notarization/publication verification remains pending those credentials; a green unit/GUI
-PR does not imply a notarized distribution was produced. No release tag is created by
-this stage.
+secrets are not yet configured. The local Developer ID
+identity generated a timestamped hardened-runtime signature, but Gatekeeper rejected it
+with `CSSMERR_TP_CERT_REVOKED` and macOS refused launch. Replace that certificate before
+using it for distribution. CI notarization/publication verification remains pending a
+replacement certificate and those credentials; a green unit/GUI
+PR does not imply a notarized distribution was produced. Notarization verification is
+deferred at the user's request. No release tag is created by this stage.
 
 ## Manual release gates
 

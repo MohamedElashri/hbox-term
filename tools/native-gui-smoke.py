@@ -150,7 +150,7 @@ try:
         click('[data-action="load-ssh-config"]')
         wait(lambda: execute("return document.querySelectorAll('.import-host').length===2;"), "SSH config preview")
         assert execute("return Array.from(document.querySelectorAll('.import-host')).filter(el=>el.textContent.includes('github.com')).every(el=>!el.querySelector('input').checked);")
-        contrast = execute("""
+        contrast = execute(r"""
           const el=document.querySelector('.import-host strong');
           const rgb=value=>(value.match(/[\d.]+/g)||[]).map(Number);
           const fg=rgb(getComputedStyle(el).color);
@@ -190,6 +190,12 @@ try:
     data_dir = root / "data" / "dev.elashri.ternway.ci"
     wait(lambda: (data_dir / "windows.json").exists() and len(json.loads((data_dir / "windows.json").read_text())) == 2, "window restore manifest")
     wait(lambda: (data_dir / "session.json").exists() and len(list((data_dir / "sessions").glob('*.json'))) >= 1, "every window saved before exit")
+    def app_exited():
+        try:
+            return not request("GET", f"/session/{session}/window/handles")
+        except (RuntimeError, urllib.error.URLError):
+            return True
+    wait(app_exited, "coordinated quit completed without killing the application")
     try:
         request("DELETE", f"/session/{session}")
     except (RuntimeError, urllib.error.URLError):

@@ -81,7 +81,7 @@ export function paneCount(group: TerminalGroup): string {
 /** Local shells fill the content area below their tab strip. */
 function renderLocalTerminal(): string {
   const current = state.terminalTabs.find(tab => tab.id === state.activeTerminalTabId);
-  return `<section class="terminal-workspace terminal-workspace-local">${renderTabStrip()}${current?.phase === "dormant" ? `<div class="terminal-meta"><span>Saved layout · historical output</span><button class="text-button" data-action="reconnect-terminal">Start session</button></div>` : ""}<div class="terminal-surface" data-terminal-surface></div></section>`;
+  return `<section class="terminal-workspace terminal-workspace-local">${renderTabStrip()}${current?.phase === "dormant" ? `<div class="terminal-meta"><span>Saved layout · session not started</span><button class="text-button" data-action="reconnect-terminal">Start session</button></div>` : ""}<div class="terminal-surface" data-terminal-surface></div></section>`;
 }
 
 export function renderProcesses(): string {

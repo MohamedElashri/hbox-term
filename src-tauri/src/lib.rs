@@ -1393,11 +1393,15 @@ fn set_window_restore(app: AppHandle, window: tauri::WebviewWindow, enabled: boo
 #[tauri::command]
 fn request_app_quit(app: AppHandle) -> Result<(), AppError> { Ok(desktop_windows::request_quit(&app)?) }
 
-#[tauri::command(async)]
-fn request_app_restart(app: AppHandle) -> Result<(), AppError> {
+#[tauri::command]
+async fn request_app_restart(app: AppHandle) -> Result<(), AppError> {
     let result=desktop_windows::request_restart(&app)?;
-    Ok(result.recv_timeout(std::time::Duration::from_secs(125)).map_err(|_|"Restart was cancelled because a window did not finish saving".to_string())??)
+    tauri::async_runtime::spawn_blocking(move || result.recv_timeout(std::time::Duration::from_secs(125)).map_err(|_| "Restart cancelled because a window did not finish saving".to_string())?)
+        .await.map_err(|error|error.to_string())??;
+    Ok(())
 }
+#[tauri::command]
+fn cancel_app_shutdown(app: AppHandle, token: String) -> Result<(), AppError> { Ok(desktop_windows::cancel_shutdown(&app,&token)?) }
 
 #[tauri::command]
 fn pending_quit(app: AppHandle, window: tauri::WebviewWindow) -> Option<serde_json::Value> { desktop_windows::pending_quit(&app, window.label()) }
@@ -2048,6 +2052,7 @@ pub fn run() {
             acknowledge_quit,
             pending_quit,
             request_app_restart,
+            cancel_app_shutdown,
             request_app_quit,
             set_window_restore,
             start_remote_edit,

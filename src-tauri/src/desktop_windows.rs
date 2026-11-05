@@ -215,6 +215,13 @@ fn create(app: &AppHandle, label: &str, layout: Option<&str>) -> Result<(), Stri
         .map_err(|e| e.to_string())
 }
 pub(crate) fn new_window(app: &AppHandle, layout: Option<&str>) -> Result<String, String> {
+    let state = app.state::<DesktopWindows>();
+    let preparing = state.quit.try_lock().map_err(|_| {
+        "Ternway is preparing to close; cancel before opening another window".to_string()
+    })?;
+    if preparing.is_some() {
+        return Err("Cancel closing or restarting before opening another window".into());
+    }
     let label = format!("workspace-{}", uuid::Uuid::new_v4());
     create(app, &label, layout)?;
     Ok(label)
@@ -294,7 +301,10 @@ fn request_shutdown(
     reply: Option<mpsc::Sender<Result<(), String>>>,
 ) -> Result<(), String> {
     let state = app.state::<DesktopWindows>();
-    let mut request = state.quit.lock().map_err(|e| e.to_string())?;
+    let mut request = state
+        .quit
+        .try_lock()
+        .map_err(|_| "Ternway is already preparing to close".to_string())?;
     if request.is_some() {
         return if intent == ShutdownIntent::Quit {
             Ok(())
@@ -385,6 +395,8 @@ fn emit_next_quit(app: &AppHandle, token: &str) -> Result<(), String> {
                     .quit
                     .lock()
                     .map_err(|e| e.to_string())? = None;
+                notify_reply(app, token, Err(error.to_string()));
+                let _=app.emit("shutdown-aborted",serde_json::json!({"token":token,"message":"A window could not prepare to close. No restart was performed."}));
                 return Err(error.to_string());
             }
         } else {
@@ -396,7 +408,7 @@ fn emit_next_quit(app: &AppHandle, token: &str) -> Result<(), String> {
 pub(crate) fn pending_quit(app: &AppHandle, label: &str) -> Option<serde_json::Value> {
     app.state::<DesktopWindows>()
         .quit
-        .lock()
+        .try_lock()
         .ok()
         .and_then(|request| {
             request.as_ref().and_then(|(token, pending, intent)| {
@@ -435,7 +447,9 @@ pub(crate) fn acknowledge_quit(
 ) -> Result<(), String> {
     let state = app.state::<DesktopWindows>();
     let complete = {
-        let mut request = state.quit.lock().map_err(|e| e.to_string())?;
+        let Ok(mut request) = state.quit.try_lock() else {
+            return Ok(());
+        };
         if !request.as_ref().is_some_and(|(current, pending, _)| {
             current == token && pending.front().is_some_and(|next| next == label)
         }) {
@@ -454,7 +468,31 @@ pub(crate) fn acknowledge_quit(
             token,
             Err("Restart cancelled; all windows remain open".into()),
         );
+        let _=app.emit("shutdown-aborted",serde_json::json!({"token":token,"message":"Close or restart cancelled. All windows remain open."}));
     }
+    Ok(())
+}
+
+pub(crate) fn cancel_shutdown(app: &AppHandle, token: &str) -> Result<(), String> {
+    let state = app.state::<DesktopWindows>();
+    let mut request = state
+        .quit
+        .try_lock()
+        .map_err(|_| "Still preparing to close; try cancelling again".to_string())?;
+    if !request
+        .as_ref()
+        .is_some_and(|(current, _, _)| current == token)
+    {
+        return Ok(());
+    }
+    *request = None;
+    drop(request);
+    notify_reply(
+        app,
+        token,
+        Err("Restart cancelled; all windows remain open".into()),
+    );
+    let _=app.emit("shutdown-aborted",serde_json::json!({"token":token,"message":"Close or restart cancelled. All windows remain open."}));
     Ok(())
 }
 
