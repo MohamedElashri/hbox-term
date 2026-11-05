@@ -1,3 +1,10 @@
+import { loadAboutMetadata, aboutBuildSummary } from "./about";
+import { BRAND } from "./brand";
+import { importedDraft } from "./ssh-import";
+import type { SshConfigEntry } from "../types";
+import { escapeHtml } from "./format";
+import { errorText } from "./command-client";
+import { refreshSnapshot } from "./workspace";
 import { invoke } from "@tauri-apps/api/core";
 import { addAuthorizedKey, closeModal, copyText, deleteSavedCommand, deleteTunnel, forwardPort, removeAuthorizedKey, runComposeAction, runFirewallAction, runQuickAction, runSavedCommand, saveCommandForm, saveTunnelForm, submitComposeScaleForm, submitFirewallForm, toggleTunnel } from "./actions/admin";
 import { createDocker, createDockerResource, dockerAction, ensureDockerContainersForLogs, loadDockerLogs, openDockerTerminal, openInspect, openServiceDetails, pullDockerImage, runProcessAction, runServiceAction } from "./actions/containers";
@@ -5,8 +12,8 @@ import { loadLogFileChoices, loadLogViewer, logViewerForScope, setLogFollowing, 
 import { cancelTransfer, changeRemoteMode, changeRemoteOwner, createFolder, deleteRemote, downloadRemote, editInLocalEditor, loadMoreActiveView, navigateFiles, openEditor, saveEditorForm, selectDockerSection, uploadLocal, uploadLocalFolder } from "./actions/remote";
 import { changeMasterPasswordForm, createGroup, createUserForm, deleteActiveServer, deleteGroup, deleteServer, disconnectActiveServer, duplicateServer, openPackageDetails, resetCredentialsForm, resetUserPasswordForm, runCronAction, runPackageAction, runUserAction, saveCronForm, saveServerForm, saveWorkspaceTabRenameForm, submitMasterPasswordForm } from "./actions/servers";
 import { formatBytes } from "./format";
-import { confirm, finishAppDialog, finishTextInput, message, renderAuthFieldsForForm } from "./modals";
-import { filteredServers, render, renderServerGroups } from "./render";
+import { confirm, requestTextInput, finishAppDialog, finishTextInput, message, renderAuthFieldsForForm } from "./modals";
+import { filteredServers, groupKey, render, renderServerGroups } from "./render";
 import { closeCustomSelects, syncCustomSelect } from "./select-controls";
 import { cancelCurrentOperation, finishHostKeyPrompt, setError } from "./session";
 import { activeCapabilities, activeTerminalTabByWorkspace, appWindow, createLogViewer, DEFAULT_INTERFACE_SCALE, root, state } from "./state";
@@ -20,6 +27,8 @@ import { loadTerminalConfig } from "./terminal-config";
 import { RELEASES_URL, updates } from "./updater";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { createWorkspaceTabDragController } from "./workspace-tab-drag";
+
+let importEntries: SshConfigEntry[] = [];
 
 export async function handleClick(event: MouseEvent): Promise<void> {
   const clickedElement = event.target as HTMLElement;
@@ -57,6 +66,7 @@ export async function handleClick(event: MouseEvent): Promise<void> {
   closeCustomSelects(root);
   const target = (event.target as HTMLElement).closest<HTMLElement>("[data-window], [data-server-action], [data-action], [data-view], [data-server-id], [data-workspace-tab], [data-workspace-rename], [data-workspace-close], [data-terminal-tab], [data-terminal-close], [data-file-path], [data-file-edit], [data-file-edit-local], [data-file-download], [data-file-delete], [data-file-chmod], [data-file-chown], [data-disk-tab], [data-disk-varlog], [data-disk-open-path], [data-container-platform-tab], [data-docker-tab], [data-docker-action], [data-docker-logs], [data-docker-exec], [data-docker-inspect], [data-logs-source], [data-process-action], [data-service-action], [data-service-details], [data-cron-edit], [data-cron-action], [data-package-action], [data-package-details], [data-account-tab], [data-user-action], [data-group-delete], [data-administration-tab], [data-compose-action], [data-firewall-action], [data-key-remove], [data-quick-action], [data-command-run], [data-command-edit], [data-command-delete], [data-tunnel-toggle], [data-port-forward], [data-tunnel-edit], [data-tunnel-delete]");
   if (!target) return;
+  if (target.dataset.action === "rename-connection-group") event.preventDefault();
   if (target.dataset.serverAction) {
     event.preventDefault();
     event.stopPropagation();
@@ -269,7 +279,42 @@ export async function handleClick(event: MouseEvent): Promise<void> {
 /** Runs a `data-action`; `target` carries extra data attributes for actions that need them. */
 export async function runAction(action: string, target: HTMLElement = document.createElement("button")): Promise<void> {
   switch (action) {
+    case "rename-connection-group": {
+      const ids = state.snapshot.servers.filter(s => groupKey(s.groupName) === target.dataset.group).map(s => s.id);
+      const name = await requestTextInput({ title: "Move group connections", label: "Destination group (leave empty to ungroup)", defaultValue: target.dataset.label || "", allowEmpty: true });
+      if (name === null || name === undefined) break;
+      try {
+        await invoke("set_connection_group", { serverIds: ids, groupName: name.normalize("NFKC").trim().replace(/\s+/gu, " ") });
+        await refreshSnapshot(false); render();
+      } catch (error) { setError(error); }
+      break;
+    }
+    case "import-ssh-config": importEntries = []; state.modal = "ssh-import"; render(); break;
+    case "load-ssh-config": {
+      const form = target.closest<HTMLFormElement>("form")!;
+      const notice = form.querySelector<HTMLElement>("[data-import-error]")!;
+      importEntries = [];
+      form.querySelector<HTMLElement>("[data-import-hosts]")!.textContent = "Reading…";
+      try {
+        importEntries = await invoke<SshConfigEntry[]>("read_ssh_config", { path: String(new FormData(form).get("path") || "") });
+        form.querySelector<HTMLElement>("[data-import-hosts]")!.innerHTML = importEntries.length
+          ? importEntries.map((entry, index) => `<label class="import-host"><input type="checkbox" name="hosts" value="${index}" checked/><span><strong>${escapeHtml(entry.alias)}</strong><small>${escapeHtml(entry.username || "default user")}@${escapeHtml(entry.host || entry.alias)}:${entry.port || 22}</small></span></label>`).join("")
+          : "No explicit Host aliases found.";
+        notice.textContent = "";
+      } catch (error) { notice.textContent = errorText(error); form.querySelector<HTMLElement>("[data-import-hosts]")!.textContent = ""; }
+      break;
+    }
     case "add-server": state.editingServer = null; state.modal = "server"; state.errorMessage = ""; render(); break;
+    case "show-about":
+      state.modal = "about"; render();
+      try { await loadAboutMetadata(); if (state.modal === "about") render(); } catch (error) { setError(error); }
+      break;
+    case "copy-build-info": await copyText(aboutBuildSummary()); break;
+    case "open-project-link": {
+      const key = target.dataset.projectLink;
+      if (key === "source" || key === "issues" || key === "releases" || key === "license") await openUrl(BRAND[key]).catch(setError);
+      break;
+    }
     case "credential-settings": state.credentialSettingsError = ""; state.credentialSettingsNotice = ""; state.modal = "security"; render(); break;
     case "change-master-password": state.credentialSettingsError = ""; state.credentialSettingsNotice = ""; state.modal = "change-password"; render(); break;
     case "reset-credentials": state.credentialSettingsError = ""; state.credentialSettingsNotice = ""; state.modal = "reset-credentials"; render(); break;
@@ -284,6 +329,36 @@ export async function runAction(action: string, target: HTMLElement = document.c
     case "cancel-operation": cancelCurrentOperation(); break;
     case "cancel-transfer": cancelTransfer(); break;
     case "disconnect": await disconnectActiveServer(); break;
+    case "use-system-ssh-agent":
+    case "find-onepassword-agent":
+    case "check-ssh-agent": {
+      const form = target.closest<HTMLFormElement>('form[data-form="identity"]');
+      const input = form?.elements.namedItem("reference") as HTMLInputElement | null;
+      const status = form?.querySelector<HTMLElement>("[data-agent-status]");
+      if (!input || !status) break;
+      const button = target as HTMLButtonElement;
+      button.disabled = true;
+      status.textContent = "Checking agent…";
+      try {
+        if (target.dataset.action === "use-system-ssh-agent") input.value = "env:SSH_AUTH_SOCK";
+        if (target.dataset.action === "find-onepassword-agent") input.value = await invoke<string>("find_onepassword_agent");
+        const count = await invoke<number>("check_ssh_agent", { reference: input.value.trim() });
+        if (status.isConnected) status.textContent = count ? `Agent reachable: ${count} public key${count === 1 ? "" : "s"} available. Signing approval is checked when you connect.` : "Agent reachable, but no keys are available. Load an SSH key into your agent and check again.";
+      } catch (error) { if (status.isConnected) status.textContent = errorText(error); }
+      finally { button.disabled = false; }
+      break;
+    }
+    case "manage-identities": state.modal = "identities"; render(); break;
+    case "delete-identity": {
+      try {
+        await invoke("delete_identity", { identityId: target.dataset.identityId });
+        await refreshSnapshot(false); render();
+      } catch (error) {
+        const notice = root.querySelector<HTMLElement>("[data-identity-error]");
+        if (notice) { notice.hidden = false; notice.textContent = errorText(error); }
+      }
+      break;
+    }
     case "save-and-test": { const form = root.querySelector<HTMLFormElement>('form[data-form="server"]'); if (form) await saveServerForm(form, true); break; }
     case "delete-server": await deleteActiveServer(); break;
     case "refresh": state.composeProjectsServerId = null; await loadActiveView(false, true); break;
@@ -310,7 +385,7 @@ export async function runAction(action: string, target: HTMLElement = document.c
       break;
     case "install-update": await updates.install(); break;
     case "restart-update":
-      if (await confirm("Restarting ends the programs running in your terminals.", { title: "Restart hbox-term?" })) await updates.restartNow();
+      if (await confirm("Restarting ends the programs running in your terminals.", { title: "Restart Ternway?" })) await updates.restartNow();
       break;
     case "open-releases": await openUrl(RELEASES_URL).catch(setError); break;
     case "reload-config": await loadTerminalConfig(true); render(); break;
@@ -337,7 +412,7 @@ export async function runAction(action: string, target: HTMLElement = document.c
     case "add-authorized-key": await addAuthorizedKey(); break;
     case "new-command": state.editingCommand = null; state.modal = "command"; render(); break;
     case "new-tunnel": state.editingTunnel = null; state.modal = "tunnel"; render(); break;
-    case "show-help": await message("The Local tab is a shell on this machine. Add a server with a password or private key to open SSH terminals next to it and manage the server from the sidebar: overview, files over SFTP, services, containers, logs, and network sockets. Nothing is installed on your servers.", { title: "How hbox-term works" }); break;
+    case "show-help": await message("The Local tab is a shell on this machine. Add a server with a password or private key to open SSH terminals next to it and manage the server from the sidebar: overview, files over SFTP, services, containers, logs, and network sockets. Nothing is installed on your servers.", { title: "How Ternway works" }); break;
   }
 }
 
@@ -406,6 +481,11 @@ export function handleChange(event: Event): void {
       set("host", entry.host ?? "");
       set("username", entry.username ?? "");
       set("port", String(entry.port ?? 22));
+      if (entry.port && entry.port !== 22) {
+        const port = form.elements.namedItem("port") as HTMLInputElement | null;
+        const section = port?.closest<HTMLDetailsElement>("details");
+        if (section) section.open = true;
+      }
       if (entry.keyPath) {
         const radio = form.querySelector<HTMLInputElement>('input[name="authMethod"][value="privateKey"]');
         if (radio) { radio.checked = true; renderAuthFieldsForForm(form); }
@@ -413,6 +493,7 @@ export function handleChange(event: Event): void {
         const customKey = form.elements.namedItem("customKeyPath") as HTMLInputElement | null;
         if (keySelect && state.snapshot.sshKeys.some((key) => key.path === entry.keyPath)) {
           keySelect.value = entry.keyPath;
+          if (customKey) customKey.value = "";
           const picker = keySelect.closest<HTMLElement>(".custom-select");
           if (picker) syncCustomSelect(picker);
         }
@@ -451,7 +532,38 @@ export async function handleSubmit(event: SubmitEvent): Promise<void> {
   event.preventDefault();
   const form = event.target as HTMLFormElement;
   const kind = form.dataset.form;
-  if (kind === "master-password") await submitMasterPasswordForm(form);
+  if (kind === "ssh-import") {
+    if (!form.reportValidity()) return;
+    const data = new FormData(form);
+    const notice = form.querySelector<HTMLElement>("[data-import-error]")!;
+    const button = form.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+    button.disabled = true;
+    let saved = 0;
+    try {
+      const selected = data.getAll("hosts").map(value => Number(value));
+      if (!selected.length) throw new Error("Select at least one host.");
+      const drafts = selected.map(index => importedDraft(importEntries[index], String(data.get("username") || ""), String(data.get("groupName") || ""), String(data.get("identityId") || "")));
+      for (let i = 0; i < drafts.length; i++) {
+        await invoke("save_server", { draft: drafts[i] });
+        const checkbox = form.querySelector<HTMLInputElement>(`input[name="hosts"][value="${selected[i]}"]`)!;
+        checkbox.checked = false; checkbox.disabled = true; saved++;
+      }
+      notice.textContent = `Imported ${saved} connection(s). Close this window to review them in the library.`;
+    } catch (error) { notice.textContent = `Imported ${saved} connection(s). ${errorText(error)}`; }
+    finally { await refreshSnapshot(false); button.disabled = false; }
+  }
+  else if (kind === "identity") {
+    if (!form.reportValidity()) return;
+    const data = new FormData(form);
+    try {
+      await invoke("create_identity", { name: String(data.get("name") ?? ""), username: String(data.get("username") ?? ""), reference: String(data.get("reference") ?? "").trim() });
+      await refreshSnapshot(false); render();
+    } catch (error) {
+      const notice = form.querySelector<HTMLElement>("[data-identity-error]");
+      if (notice) { notice.hidden = false; notice.textContent = errorText(error); }
+    }
+  }
+  else if (kind === "master-password") await submitMasterPasswordForm(form);
   else if (kind === "change-password") await changeMasterPasswordForm(form);
   else if (kind === "reset-credentials") await resetCredentialsForm(form);
   else if (kind === "server") await saveServerForm(form, false);
@@ -488,6 +600,8 @@ export function handleKeydown(event: KeyboardEvent): void {
     }
     if (event.key === "Escape") {
       event.preventDefault();
+      // Consume the picker dismissal before the window handler closes the form.
+      event.stopPropagation();
       closeCustomSelects(root);
       trigger?.focus();
       return;

@@ -74,3 +74,10 @@ make build
 `.secrets/` is ignored by git. To test an update locally, build an older version with
 `--config` pointing `plugins.updater.endpoints` at a local server (plus
 `"dangerousInsecureTransportProtocol": true` for plain HTTP) and serve a `latest.json` there.
+
+### Agent test prerequisites
+
+The normal suite uses OpenSSH `ssh-agent`, `ssh-add` and `ssh-keygen` with a
+disposable agent/key fixture. macOS includes these tools; on Linux install
+`openssh-client`. It does not use your current agent or contact a remote host.
+Real-host and password-manager tests remain explicit opt-in checks.

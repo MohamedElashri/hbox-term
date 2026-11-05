@@ -1,4 +1,4 @@
-export type AuthMethod = "password" | "privateKey";
+export type AuthMethod = "password" | "privateKey" | "sshAgent";
 
 export interface ServerProfile {
   id: string;
@@ -7,6 +7,7 @@ export interface ServerProfile {
   username: string;
   port: number;
   authMethod: AuthMethod;
+  identityId?: string;
   keyPath?: string;
   jumpHostId?: string;
   groupName?: string;
@@ -38,7 +39,16 @@ export interface SshConfigEntry {
   keyPath?: string;
 }
 
+export interface Identity {
+  id: string;
+  name: string;
+  username: string;
+  provider: "localVault" | "sshAgent";
+  reference: string;
+}
+
 export interface AppStateSnapshot {
+  identities: Identity[];
   version: number;
   servers: ServerProfile[];
   sshKeys: SshKey[];

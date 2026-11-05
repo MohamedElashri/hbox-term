@@ -53,6 +53,12 @@ pub(crate) const INTEGRATION_FILES: [(&str, &str); 4] = [
 
 /// Writes the shell integration scripts (refreshed on every start so they match this build).
 pub fn install_shell_integration(data_dir: &Path) -> Result<(), String> {
+    let root = write_shell_integration(data_dir)?;
+    let _ = INTEGRATION_DIR.set(root);
+    Ok(())
+}
+
+fn write_shell_integration(data_dir: &Path) -> Result<std::path::PathBuf, String> {
     let root = data_dir.join("shell-integration");
     for (path, contents) in INTEGRATION_FILES {
         let target = root.join(path);
@@ -63,8 +69,7 @@ pub fn install_shell_integration(data_dir: &Path) -> Result<(), String> {
         std::fs::write(&target, contents)
             .map_err(|error| format!("Could not write {}: {error}", target.display()))?;
     }
-    let _ = INTEGRATION_DIR.set(root);
-    Ok(())
+    Ok(root)
 }
 
 fn shell_name(program: &str) -> &str {
@@ -81,6 +86,15 @@ fn apply_shell_integration(command: &mut CommandBuilder, mode: Option<&str>, pro
     let Some(root) = INTEGRATION_DIR.get() else {
         return;
     };
+    apply_shell_integration_at(command, mode, program, root);
+}
+
+fn apply_shell_integration_at(
+    command: &mut CommandBuilder,
+    mode: Option<&str>,
+    program: &str,
+    root: &Path,
+) {
     let mode = mode.unwrap_or("detect");
     if mode == "none" {
         return;
@@ -410,7 +424,7 @@ mod tests {
         }
         let home = std::env::temp_dir().join(format!("hbox-zsh-{}", Uuid::new_v4()));
         std::fs::create_dir_all(&home).unwrap();
-        install_shell_integration(&home).unwrap();
+        write_shell_integration(&home).unwrap();
         let (frames, received) = mpsc::channel();
         let output = Channel::new(move |body| {
             if let InvokeResponseBody::Raw(bytes) = body {
@@ -434,7 +448,12 @@ mod tests {
         // An empty HOME keeps the developer's own zsh configuration out of the test.
         command.env("HOME", &home);
         command.env_remove("ZDOTDIR");
-        apply_shell_integration(&mut command, request.shell_integration.as_deref(), "zsh");
+        apply_shell_integration_at(
+            &mut command,
+            request.shell_integration.as_deref(),
+            "zsh",
+            &home.join("shell-integration"),
+        );
         spawn(output, sessions.clone(), request, command).expect("zsh starts");
         terminal::input(&sessions, &session_id, "true\nfalse\nexit\n".into()).unwrap();
         let mut text = Vec::new();
@@ -467,9 +486,17 @@ mod tests {
 
     #[test]
     fn bash_integration_through_the_login_rcfile() {
+        assert_bash_integration("bash");
+        // The system Bash is 3.2 on macOS, even when Homebrew Bash is on PATH.
+        #[cfg(target_os = "macos")]
+        assert_bash_integration("/bin/bash");
+    }
+
+    fn assert_bash_integration(program: &str) {
         let home = std::env::temp_dir().join(format!("hbox-bash-{}", Uuid::new_v4()));
         std::fs::create_dir_all(&home).unwrap();
-        install_shell_integration(&home).unwrap();
+        std::fs::write(home.join(".bash_profile"), "PROMPT_COMMAND=': user-prompt'\n").unwrap();
+        write_shell_integration(&home).unwrap();
         let root = home.join("shell-integration");
         let (frames, received) = mpsc::channel();
         let output = Channel::new(move |body| {
@@ -489,7 +516,7 @@ mod tests {
             env: Vec::new(),
             shell_integration: Some("bash".into()),
         };
-        let mut command = CommandBuilder::new("bash");
+        let mut command = CommandBuilder::new(program);
         command.args([
             "--rcfile",
             &root.join("bash/login.bash").display().to_string(),
@@ -510,7 +537,10 @@ mod tests {
         }
         let text = String::from_utf8_lossy(&text);
         assert!(text.contains("\x1b]133;A\x07"), "no prompt mark: {text:?}");
-        assert!(text.contains("\x1b]133;C\x07"), "no command mark: {text:?}");
+        assert_eq!(
+            text.matches("\x1b]133;C\x07").count(), 3,
+            "expected one command mark for each input line, excluding prompt hooks: {text:?}"
+        );
         assert!(
             text.contains("\x1b]133;D;1\x07"),
             "no failure mark: {text:?}"

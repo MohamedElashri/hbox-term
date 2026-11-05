@@ -1,6 +1,6 @@
 [package]
 name = "hbox-term"
-version = "0.1.0"
+version = "0.2.0"
 description = "hbox-term: a fast local and remote terminal workspace with agentless Linux server management over SSH."
 authors = ["Mohamed Elashri <git@elashri.com>"]
 license = "MIT"
@@ -15,6 +15,7 @@ crate-type = ["lib", "cdylib", "staticlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+libc = "0.2"
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
@@ -49,3 +50,7 @@ lto = true
 codegen-units = 1
 strip = true
 panic = "abort"
+
+[patch.crates-io]
+# Local libssh2 fix: invalidate a failed agent socket before Agent::drop.
+libssh2-sys = { path = "vendor/libssh2-sys" }

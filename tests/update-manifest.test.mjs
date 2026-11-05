@@ -16,10 +16,10 @@ const NAMES = [
   "darwin-x64-app.app.tar.gz", "darwin-aarch64-app.app.tar.gz",
 ].map((suffix) => `hbox-term-v0.1.0-${suffix}`);
 
-function release({ sign = () => signature(ours), names = NAMES, tag = "v0.1.0" } = {}) {
+function release({ sign = () => signature(ours), names = NAMES, tag = "v0.1.0", version = "0.1.0" } = {}) {
   const assets = [...names, ...names.map((name) => `${name}.sig`), "hbox-term-v0.1.0-darwin-x64-dmg.dmg", "SHA256SUMS.txt"];
   const signatures = Object.fromEntries(names.map((name) => [`${name}.sig`, sign(name)]));
-  return createManifest({ version: "0.1.0", tag, repository: "owner/hbox-term", notes: "Notes", publicKey: key(ours), assets, signatures, now: "2026-10-25T00:00:00Z" });
+  return createManifest({ version, tag, repository: "owner/hbox-term", notes: "Notes", publicKey: key(ours), assets, signatures, now: "2026-10-25T00:00:00Z" });
 }
 
 test("covers every package type with generic fallbacks", () => {
@@ -42,4 +42,16 @@ test("rejects a signature from another key", () => {
 
 test("rejects a tag that does not match the version", () => {
   assert.throws(() => release({ tag: "v0.1.1" }), /does not match/);
+});
+
+test("branded beta bundles cover every update platform", () => {
+  const version = "0.2.0-beta.1";
+  const names = NAMES.map(name => name.replace("hbox-term-v0.1.0-", `ternway-v${version}-`));
+  const manifest = release({ names, version, tag: `v${version}` });
+  for (const target of REQUIRED) assert.ok(manifest.platforms[target], target);
+  assert.equal(manifest.version, version);
+  assert.match(manifest.platforms["darwin-aarch64"].url, /ternway-v0.2.0-beta.1-/);
+});
+test("rejects malformed prerelease version paths", () => {
+  assert.throws(() => release({version:"0.2.0-beta/one",tag:"v0.2.0-beta/one"}), /does not match/);
 });

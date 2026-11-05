@@ -26,11 +26,11 @@ function status(): string {
   const { phase, version, downloaded, total } = updates.state;
   switch (phase) {
     case "checking": return "Checking GitHub releases…";
-    case "current": return "hbox-term is up to date.";
-    case "available": return `hbox-term ${escapeHtml(version ?? "")} is available.`;
+    case "current": return "Ternway is up to date.";
+    case "available": return `Ternway ${escapeHtml(version ?? "")} is available.`;
     case "downloading": return total ? `Downloading… ${Math.floor((downloaded / total) * 100)}% of ${formatBytes(total)}` : `Downloading… ${formatBytes(downloaded)}`;
     case "installing": return "Verified. Installing… Approve the system prompt if one appears.";
-    case "installed": return `hbox-term ${escapeHtml(version ?? "")} is installed. Restart to use it.`;
+    case "installed": return `Ternway ${escapeHtml(version ?? "")} is installed. Restart to use it.`;
     case "restarting": return "Restarting…";
     default: return "";
   }
@@ -51,7 +51,7 @@ function actions(): string {
 
 export function renderUpdateSection(): string {
   const { phase, notes, error } = updates.state;
-  const version = metadata ? `You have hbox-term ${escapeHtml(metadata.version)}.` : "";
+  const version = metadata ? `You have Ternway ${escapeHtml(metadata.version)}.` : "";
   const message = status();
-  return `<section class="settings-section settings-section-stacked update-section" data-update-section aria-labelledby="update-settings-title"><div class="settings-section-copy"><h3 id="update-settings-title">Updates</h3><p>${version} hbox-term checks GitHub only when you ask, and verifies the signature of every update before installing it.</p>${message ? `<p class="update-status" aria-live="polite">${message}</p>` : ""}${phase === "available" && notes ? `<pre class="update-notes">${escapeHtml(notes)}</pre>` : ""}${error ? `<div class="inline-error">${icon("info")}<span>${escapeHtml(error)}</span></div>` : ""}</div><div class="config-actions">${actions()}</div></section>`;
+  return `<section class="settings-section settings-section-stacked update-section" data-update-section aria-labelledby="update-settings-title"><div class="settings-section-copy"><h3 id="update-settings-title">Updates</h3><p>${version} Ternway checks GitHub only when you ask, and verifies the signature of every update before installing it.</p>${message ? `<p class="update-status" aria-live="polite">${message}</p>` : ""}${phase === "available" && notes ? `<pre class="update-notes">${escapeHtml(notes)}</pre>` : ""}${error ? `<div class="inline-error">${icon("info")}<span>${escapeHtml(error)}</span></div>` : ""}</div><div class="config-actions">${actions()}</div></section>`;
 }

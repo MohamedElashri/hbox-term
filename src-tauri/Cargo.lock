@@ -1753,7 +1753,7 @@ dependencies = [
 
 [[package]]
 name = "hbox-term"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "aes-gcm",
  "argon2",
@@ -1761,6 +1761,7 @@ dependencies = [
  "chrono",
  "cron",
  "dirs 6.0.0",
+ "libc",
  "notify",
  "portable-pty",
  "rand 0.8.7",
@@ -2470,8 +2471,6 @@ dependencies = [
 [[package]]
 name = "libssh2-sys"
 version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c04141a07bb0c0bc461cb657808764de571702a59bc5c726c400ac9a7625e3ab"
 dependencies = [
  "cc",
  "libc",

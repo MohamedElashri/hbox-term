@@ -1,8 +1,9 @@
+import { connectionDraft } from "../connection-draft";
 import { invoke } from "@tauri-apps/api/core";
 import type { CredentialStatus, ServerProfile, ServerSaveResult } from "../../types";
 import { errorText } from "../command-client";
 import { confirm, profileRouteContains, requestTextInput } from "../modals";
-import { normalizedGroupName, render } from "../render";
+import { render } from "../render";
 import { cancelCurrentOperation, errorKind, finishMasterPasswordPrompt, invokeCommand, setError } from "../session";
 import { activeServer, connectedServerIds, createLogViewer, dashboardSnapshots, state } from "../state";
 import { clearContainerLogs, clearRefreshTimer, closeInteractiveSessions, loadActiveView, refreshSnapshot, resetPaginationState, selectWorkspaceTab, setView } from "../workspace";
@@ -111,30 +112,19 @@ export async function resetCredentialsForm(form: HTMLFormElement): Promise<void>
 }
 
 export async function saveServerForm(form: HTMLFormElement, testAfter: boolean): Promise<void> {
-  const data = new FormData(form);
-  const authMethod = String(data.get("authMethod") ?? "password") as "password" | "privateKey";
-  const customKeyPath = String(data.get("customKeyPath") ?? "").trim();
-  const selectedKeyPath = String(data.get("keyPath") ?? "").trim();
-  const password = String(data.get("password") ?? "");
-  const keyPassphrase = String(data.get("keyPassphrase") ?? "");
-  const sudoPassword = String(data.get("sudoPassword") ?? "");
-  const payload: Record<string, unknown> = {
-    id: state.editingServer?.id,
-    name: String(data.get("name") ?? ""),
-    host: String(data.get("host") ?? ""),
-    username: String(data.get("username") ?? ""),
-    port: Number(data.get("port") ?? 22),
-    authMethod,
-    keyPath: authMethod === "privateKey" ? customKeyPath || selectedKeyPath || undefined : undefined,
-    jumpHostId: String(data.get("jumpHostId") ?? "").trim() || undefined,
-    groupName: normalizedGroupName(String(data.get("groupName") ?? "")) || undefined,
-    tags: String(data.get("tags") ?? "").split(",").map((tag) => tag.trim()).filter(Boolean),
-    notes: String(data.get("notes") ?? ""),
-    favorite: data.get("favorite") === "on",
-  };
-  if (!state.editingServer || password) payload.password = password;
-  if (!state.editingServer || keyPassphrase) payload.keyPassphrase = keyPassphrase;
-  if (!state.editingServer || sudoPassword) payload.sudoPassword = sudoPassword;
+  // Reveal invalid controls before native validation tries to focus them.
+  for (const field of form.querySelectorAll<HTMLInputElement>("input:invalid")) {
+    const section = field.closest<HTMLDetailsElement>("details");
+    if (section) section.open = true;
+  }
+  if (!form.reportValidity()) return;
+  let payload: Record<string, unknown>;
+  try { payload = connectionDraft(new FormData(form), state.editingServer?.id); }
+  catch (error) {
+    const notice = form.querySelector<HTMLElement>("[data-connection-error]");
+    if (notice) { notice.hidden = false; notice.textContent = errorText(error); }
+    return;
+  }
   cancelCurrentOperation();
   state.errorMessage = ""; render();
   try {

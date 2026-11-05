@@ -1,3 +1,5 @@
+import { rememberGroup } from "./app/connection-groups";
+import { closeCustomSelects } from "./app/select-controls";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import "@fontsource/jetbrains-mono/400.css";
@@ -9,7 +11,7 @@ import { closeModal } from "./app/actions/admin";
 import { appendLogOutput } from "./app/actions/logs";
 import { transferUpload } from "./app/actions/remote";
 import { errorText } from "./app/command-client";
-import { handleChange, handleClick, handleInput, handleKeydown, handleSubmit, workspaceTabDrag } from "./app/events";
+import { handleChange, handleClick, handleInput, handleKeydown, handleSubmit, runAction, workspaceTabDrag } from "./app/events";
 import { render } from "./app/render";
 import { matchKeybinding } from "./app/keybindings";
 import { appWindow, DEFAULT_INTERFACE_SCALE, quickMode, root, state } from "./app/state";
@@ -24,6 +26,7 @@ import "./styles.css";
 import type { CredentialStatus, TerminalEvent, TransferProgress } from "./types";
 
 async function installEventListeners(): Promise<void> {
+  state.terminalUnlisteners.push(await listen("show-about", () => { void runAction("show-about"); }));
   state.terminalUnlisteners.push(await listen<TerminalEvent>("log-stream-output", (event) => {
     if (state.logsViewer.streamId === event.payload.sessionId) appendLogOutput(state.logsViewer, event.payload.data, "workspace");
     else if (state.containerLogViewer?.streamId === event.payload.sessionId) appendLogOutput(state.containerLogViewer, event.payload.data, "container");
@@ -67,6 +70,10 @@ async function installEventListeners(): Promise<void> {
 installTabStripHandlers(root);
 installDockDivider();
 root.addEventListener("click", (event) => { void handleClick(event); });
+root.addEventListener("toggle", (event) => {
+  const details = event.target as HTMLDetailsElement;
+  if (details.dataset.connectionGroup && !state.serverQuery) rememberGroup(details.dataset.connectionGroup, details.open);
+}, true);
 root.addEventListener("input", handleInput);
 root.addEventListener("change", handleChange);
 root.addEventListener("submit", (event) => { void handleSubmit(event); });
@@ -82,6 +89,15 @@ root.addEventListener("click", (event) => {
 
 window.addEventListener("contextmenu", (event) => { event.preventDefault(); }, { capture: true });
 window.addEventListener("keydown", (event) => {
+  // This listener runs in capture phase, before the picker's key handler.
+  const openPicker = root.querySelector<HTMLElement>(".custom-select.open");
+  if (event.key === "Escape" && openPicker) {
+    event.preventDefault();
+    event.stopPropagation();
+    closeCustomSelects(root);
+    openPicker.querySelector<HTMLButtonElement>(".custom-select-trigger")?.focus();
+    return;
+  }
   const target = event.target as HTMLElement;
   const inTerminal = Boolean(target.closest?.(".terminal-host"));
   const inField = !inTerminal && target.matches?.("input, textarea, select, [contenteditable]");

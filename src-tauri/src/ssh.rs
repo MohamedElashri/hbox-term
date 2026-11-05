@@ -617,6 +617,44 @@ impl<'a> KeyboardInteractivePrompt for PasswordPrompter<'a> {
 
 fn authenticate(session: &Session, profile: &ServerProfile, store: &Store) -> Result<(), String> {
     match profile.auth_method {
+        AuthMethod::SshAgent => {
+            let identity = store.resolve_identity(
+                profile
+                    .identity_id
+                    .as_deref()
+                    .ok_or("Choose an SSH agent identity")?,
+            )?;
+            if identity.provider != crate::identities::IdentityProvider::SshAgent {
+                return Err("The selected identity is not an SSH agent".into());
+            }
+            let mut agent = crate::identities::connect_agent(&session, &identity.reference)?;
+            let keys = agent
+                .identities()
+                .map_err(|e| format!("Could not read agent keys: {e}"))?;
+            if keys.is_empty() {
+                return Err(
+                    "The SSH agent has no available keys. Load an SSH key into your agent".into(),
+                );
+            }
+            let mut authenticated = false;
+            let mut failures = Vec::new();
+            for (index, key) in keys.iter().enumerate() {
+                match agent.userauth(&identity.username, key) {
+                    Ok(()) if session.authenticated() => {
+                        authenticated = true;
+                        break;
+                    }
+                    Ok(()) => {
+                        failures.push(format!("Key {}: session was not authenticated", index + 1))
+                    }
+                    Err(error) => failures.push(format!("Key {}: {error}", index + 1)),
+                }
+            }
+            let _ = agent.disconnect();
+            if !authenticated {
+                return Err(format!("SSH agent authentication failed for {}. {}. Key listing succeeded, but login did not. Check the server username and authorized keys, and agent signing approval.", identity.username, failures.join("; ")));
+            }
+        }
         AuthMethod::Password => {
             let password =
                 Zeroizing::new(store.get_secret(&profile.id, "password")?.ok_or_else(|| {
@@ -1263,13 +1301,14 @@ pub(crate) fn ensure_not_cancelled(cancellation: Option<&Arc<AtomicBool>>) -> Re
 
 pub(crate) fn profile_key(profile: &ServerProfile) -> String {
     format!(
-        "{}:{}:{}:{:?}:{}:{}",
+        "{}:{}:{}:{:?}:{}:{}:{}",
         profile.host,
         profile.port,
         profile.username,
         profile.auth_method,
         profile.key_path.as_deref().unwrap_or_default(),
-        profile.jump_host_id.as_deref().unwrap_or_default()
+        profile.jump_host_id.as_deref().unwrap_or_default(),
+        profile.identity_id.as_deref().unwrap_or_default()
     )
 }
 
@@ -1800,5 +1839,79 @@ pub fn execute_privileged_with_input(
         Ok(output.stdout)
     } else {
         Err(command_error(&output))
+    }
+}
+
+#[cfg(test)]
+mod live_onepassword_tests {
+    /// Opt-in only: enforces known_hosts; trust requires an explicitly verified fingerprint.
+    #[test]
+    #[ignore = "Requires explicit host authorization and 1Password approval"]
+    fn live_onepassword_login_and_read_only_command() {
+        let socket = crate::identities::find_onepassword_agent().expect("Find 1Password agent");
+        live_agent_check(socket);
+    }
+
+    #[test]
+    #[ignore = "Requires explicit host authorization and SSH-agent signing approval"]
+    fn live_agent_login_and_read_only_command() {
+        let socket = std::env::var("HBOX_TEST_SSH_AGENT_SOCKET")
+            .unwrap_or_else(|_| crate::identities::SYSTEM_AGENT_REFERENCE.into());
+        live_agent_check(socket);
+    }
+
+    fn live_agent_check(socket: String) {
+        use crate::identities::{Identity, IdentityProvider};
+        let host = std::env::var("HBOX_TEST_SSH_HOST")
+            .expect("Set HBOX_TEST_SSH_HOST to an authorized test host");
+        let username = std::env::var("HBOX_TEST_SSH_USER").expect("Set HBOX_TEST_SSH_USER");
+        let port: u16 = std::env::var("HBOX_TEST_SSH_PORT")
+            .unwrap_or_else(|_| "22".into())
+            .parse()
+            .unwrap();
+        let directory =
+            std::env::temp_dir().join(format!("hbox-live-ssh-{}", uuid::Uuid::new_v4()));
+        let result = (|| -> Result<(), String> {
+            let store = crate::storage::Store::open(
+                &directory.join("state.sqlite"),
+                &directory.join("vault"),
+            )?;
+            store.create_identity(&Identity {
+                id: "live-test".into(),
+                name: "Temporary live test".into(),
+                username: username.clone(),
+                provider: IdentityProvider::SshAgent,
+                reference: socket,
+            })?;
+            let draft = serde_json::from_value(serde_json::json!({
+                "name":"Temporary live test", "host":host, "port":port, "username":username,
+                "authMethod":"sshAgent", "identityId":"live-test"
+            }))
+            .map_err(|e| e.to_string())?;
+            let profile = store.save_server(&draft)?;
+            // Set only after the user verifies this exact fingerprint.
+            if let Ok(fingerprint) = std::env::var("HBOX_TEST_ACCEPT_HOST_FINGERPRINT") {
+                super::accept_host_key(
+                    &store,
+                    &profile.id,
+                    &profile.host,
+                    profile.port,
+                    &fingerprint,
+                )?;
+            }
+            let mut client = super::SshClient::connect_with_cancellation(&profile, None, &store)?;
+            let output = client.exec("printf 'hbox-agent-ok\\n'")?;
+            let _ = client.disconnect();
+            if output.exit_code != 0 || output.stdout.trim() != "hbox-agent-ok" {
+                return Err("Authenticated, but read-only command verification failed".into());
+            }
+            if directory.join("vault").exists() {
+                return Err("Agent-only connection unexpectedly created a vault".into());
+            }
+            Ok(())
+        })();
+        let _ = std::fs::remove_dir_all(directory);
+        result.expect("SSH-agent authentication and read-only command succeed");
+        println!("Production SSH client: trusted host key, SSH-agent authentication, read-only command, and disconnect succeeded");
     }
 }

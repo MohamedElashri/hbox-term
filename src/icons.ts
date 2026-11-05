@@ -1,5 +1,5 @@
 const paths: Record<string, string> = {
-  logo: '<rect x="3" y="3" width="18" height="18" rx="5"/><path d="m8 9 3 3-3 3M13 15h3"/>',
+  logo: '<path d="M3 6h5.8L12 8.3 9 10.5H6.4z" fill="currentColor" stroke="none"/><path d="M15 6h6l-3.4 3.8-5.6 3v4.6l-3 2.9v-8.8z" fill="currentColor" stroke="none"/>',
   dashboard: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
   terminal: '<path d="m4 5 6 6-6 6M13 17h7"/>',
   processes: '<path d="M4 19V5m0 14h16M8 16v-5m4 5V7m4 9v-8"/>',
@@ -13,7 +13,7 @@ const paths: Record<string, string> = {
   users: '<circle cx="9" cy="8" r="3"/><path d="M3 20c0-4 2-6 6-6s6 2 6 6M16 8a3 3 0 0 1 0 6m1 1c2.5.5 4 2 4 5"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   search: '<circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 4.5 4.5"/>',
-  settings: '<path d="M12 3v3m0 12v3M3 12h3m12 0h3M5.6 5.6l2.1 2.1m8.6 8.6 2.1 2.1m0-12.8-2.1 2.1m-8.6 8.6-2.1 2.1"/><circle cx="12" cy="12" r="4"/>',
+  settings: '<path d="M4 7h6m4 0h6M4 17h10m4 0h2"/><circle cx="12" cy="7" r="2"/><circle cx="16" cy="17" r="2"/>',
   more: '<circle cx="5" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1" fill="currentColor" stroke="none"/>',
   close: '<path d="m6 6 12 12M18 6 6 18"/>',
   minus: '<path d="M5 12h14"/>',

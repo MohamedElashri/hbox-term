@@ -13,12 +13,38 @@ pub struct Store {
 }
 
 impl Store {
+    pub fn set_connection_group(
+        &self,
+        server_ids: &[String],
+        group_name: &str,
+    ) -> Result<(), String> {
+        let mut connection = self.connection.lock().map_err(|e| e.to_string())?;
+        let transaction = connection.transaction().map_err(|e| e.to_string())?;
+        let group = group_name.trim();
+        for id in server_ids {
+            let changed = transaction
+                .execute(
+                    "UPDATE servers SET group_name = ?1, updated_at = ?2 WHERE id = ?3",
+                    params![
+                        if group.is_empty() { None } else { Some(group) },
+                        Utc::now().to_rfc3339(),
+                        id
+                    ],
+                )
+                .map_err(|e| e.to_string())?;
+            if changed != 1 {
+                return Err("Connection no longer exists; no groups were changed".into());
+            }
+        }
+        transaction.commit().map_err(|e| e.to_string())
+    }
+
     pub fn open(path: &Path, credentials_path: &Path) -> Result<Self, String> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)
                 .map_err(|error| format!("Could not create hbox-term data directory: {error}"))?;
         }
-        let connection = Connection::open(path)
+        let mut connection = Connection::open(path)
             .map_err(|error| format!("Could not open hbox-term database: {error}"))?;
         connection
             .execute_batch(
@@ -86,10 +112,43 @@ impl Store {
                 )
                 .map_err(|error| format!("Could not add bastion support to hbox-term database: {error}"))?;
         }
+        crate::identities::migrate(&mut connection, path)?;
         Ok(Self {
             connection: Arc::new(Mutex::new(connection)),
             credentials: CredentialStore::open(credentials_path)?,
         })
+    }
+
+    pub fn list_identities(&self) -> Result<Vec<crate::identities::Identity>, String> {
+        let db = self.connection.lock().map_err(|e| e.to_string())?;
+        crate::identities::list(&db)
+    }
+
+    pub fn create_identity(&self, identity: &crate::identities::Identity) -> Result<(), String> {
+        if identity.provider != crate::identities::IdentityProvider::SshAgent {
+            return Err("Only SSH agent identities are supported yet".into());
+        }
+        crate::identities::validate_agent_reference(&identity.reference)?;
+        let db = self.connection.lock().map_err(|e| e.to_string())?;
+        if crate::identities::list(&db)?
+            .iter()
+            .any(|i| i.id == identity.id)
+        {
+            return Err("Create a new identity to change authentication settings".into());
+        }
+        crate::identities::save(&db, identity)
+    }
+
+    pub fn delete_identity(&self, id: &str) -> Result<(), String> {
+        let db = self.connection.lock().map_err(|e| e.to_string())?;
+        crate::identities::delete(&db, id)
+    }
+
+    pub fn resolve_identity(&self, id: &str) -> Result<crate::identities::Identity, String> {
+        self.list_identities()?
+            .into_iter()
+            .find(|i| i.id == id)
+            .ok_or_else(|| "The selected identity no longer exists".into())
     }
 
     pub fn credential_status(&self) -> crate::models::CredentialStatus {
@@ -129,7 +188,8 @@ impl Store {
                 "SELECT id, name, host, username, port, auth_method, key_path, group_name,
                         tags_json, favorite, created_at, updated_at, last_connected_at,
                         jump_host_id,
-                        COALESCE((SELECT notes FROM server_notes WHERE server_id = servers.id), '')
+                        COALESCE((SELECT notes FROM server_notes WHERE server_id = servers.id), ''),
+                        (SELECT identity_id FROM connection_identities WHERE server_id = servers.id)
                  FROM servers ORDER BY favorite DESC, name COLLATE NOCASE ASC",
             )
             .map_err(|error| format!("Could not read servers: {error}"))?;
@@ -150,7 +210,8 @@ impl Store {
                 "SELECT id, name, host, username, port, auth_method, key_path, group_name,
                         tags_json, favorite, created_at, updated_at, last_connected_at,
                         jump_host_id,
-                        COALESCE((SELECT notes FROM server_notes WHERE server_id = servers.id), '')
+                        COALESCE((SELECT notes FROM server_notes WHERE server_id = servers.id), ''),
+                        (SELECT identity_id FROM connection_identities WHERE server_id = servers.id)
                  FROM servers WHERE id = ?1",
                 [id],
                 row_to_server,
@@ -163,7 +224,27 @@ impl Store {
     pub fn save_server(&self, draft: &ServerDraft) -> Result<ServerProfile, String> {
         let name = required(&draft.name, "server name")?;
         let host = required(&draft.host, "host")?;
-        let username = required(&draft.username, "username")?;
+        let identity = if draft.auth_method == AuthMethod::SshAgent {
+            let identity = self.resolve_identity(
+                draft
+                    .identity_id
+                    .as_deref()
+                    .ok_or("Choose an SSH agent identity")?,
+            )?;
+            if identity.provider != crate::identities::IdentityProvider::SshAgent {
+                return Err("This identity does not support SSH agent authentication".into());
+            }
+            Some(identity)
+        } else {
+            None
+        };
+        let username = required(
+            identity
+                .as_ref()
+                .map(|i| i.username.as_str())
+                .unwrap_or(&draft.username),
+            "username",
+        )?;
         if !(1..=u16::MAX as u32).contains(&draft.port) {
             return Err("Port must be between 1 and 65535".to_string());
         }
@@ -198,6 +279,7 @@ impl Store {
         let auth_method = match draft.auth_method {
             AuthMethod::Password => "password",
             AuthMethod::PrivateKey => "privateKey",
+            AuthMethod::SshAgent => "sshAgent",
         };
         let is_new = existing.is_none();
         let has_new_secret = [
@@ -222,9 +304,11 @@ impl Store {
             .connection
             .lock()
             .map_err(|_| "hbox-term database lock was poisoned".to_string())?;
-        connection
-            .execute(
-                "INSERT INTO servers
+        let tx = connection
+            .unchecked_transaction()
+            .map_err(|e| e.to_string())?;
+        tx.execute(
+            "INSERT INTO servers
                     (id, name, host, username, port, auth_method, key_path, group_name,
                      tags_json, favorite, created_at, updated_at, last_connected_at, jump_host_id)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
@@ -240,36 +324,38 @@ impl Store {
                     favorite = excluded.favorite,
                     jump_host_id = excluded.jump_host_id,
                     updated_at = excluded.updated_at",
-                params![
-                    id,
-                    name,
-                    host,
-                    username,
-                    port,
-                    auth_method,
-                    draft.key_path.as_deref(),
-                    draft
-                        .group_name
-                        .as_deref()
-                        .filter(|value| !value.trim().is_empty()),
-                    tags_json,
-                    draft.favorite,
-                    created_at,
-                    now,
-                    existing
-                        .as_ref()
-                        .and_then(|server| server.last_connected_at.as_deref()),
-                    jump_host_id,
-                ],
-            )
-            .map_err(|error| format!("Could not save server: {error}"))?;
-        connection
+            params![
+                id,
+                name,
+                host,
+                username,
+                port,
+                auth_method,
+                draft.key_path.as_deref(),
+                draft
+                    .group_name
+                    .as_deref()
+                    .filter(|value| !value.trim().is_empty()),
+                tags_json,
+                draft.favorite,
+                created_at,
+                now,
+                existing
+                    .as_ref()
+                    .and_then(|server| server.last_connected_at.as_deref()),
+                jump_host_id,
+            ],
+        )
+        .map_err(|error| format!("Could not save server: {error}"))?;
+        tx
             .execute(
                 "INSERT INTO server_notes(server_id, notes, updated_at) VALUES (?1, ?2, ?3)
                  ON CONFLICT(server_id) DO UPDATE SET notes=excluded.notes, updated_at=excluded.updated_at",
                 params![id, draft.notes, now],
             )
             .map_err(|error| format!("Could not save server notes: {error}"))?;
+        crate::identities::assign(&tx, &id, identity.as_ref().map(|i| i.id.as_str()))?;
+        tx.commit().map_err(|e| e.to_string())?;
         drop(connection);
 
         if updates_credentials {
@@ -349,6 +435,7 @@ impl Store {
             username: source.username,
             port: source.port.into(),
             auth_method: source.auth_method,
+            identity_id: source.identity_id,
             key_path: source.key_path,
             jump_host_id: source.jump_host_id,
             group_name: source.group_name,
@@ -561,7 +648,10 @@ fn row_to_server(row: &rusqlite::Row<'_>) -> rusqlite::Result<ServerProfile> {
         host: row.get(2)?,
         username: row.get(3)?,
         port: row.get(4)?,
-        auth_method: if auth_method == "privateKey" {
+        identity_id: row.get(15)?,
+        auth_method: if auth_method == "sshAgent" {
+            AuthMethod::SshAgent
+        } else if auth_method == "privateKey" {
             AuthMethod::PrivateKey
         } else {
             AuthMethod::Password
@@ -576,4 +666,125 @@ fn row_to_server(row: &rusqlite::Row<'_>) -> rusqlite::Result<ServerProfile> {
         updated_at: row.get(11)?,
         last_connected_at: row.get(12)?,
     })
+}
+
+#[cfg(test)]
+mod identity_migration_tests {
+    use super::*;
+
+    #[test]
+    fn connection_group_changes_are_atomic_and_persist_without_vault_access() {
+        let dir = std::env::temp_dir().join(format!("hbox-groups-{}", Uuid::new_v4()));
+        let store = Store::open(&dir.join("state.sqlite"), &dir.join("vault")).unwrap();
+        let draft: ServerDraft = serde_json::from_value(serde_json::json!({
+            "name":"Lab", "host":"example.test", "username":"ubuntu", "port":239,
+            "authMethod":"password", "groupName":"Original"
+        }))
+        .unwrap();
+        let profile = store.save_server(&draft).unwrap();
+        assert!(store
+            .set_connection_group(&[profile.id.clone(), "missing".into()], "Other")
+            .is_err());
+        assert_eq!(
+            store.get_server(&profile.id).unwrap().group_name.as_deref(),
+            Some("Original")
+        );
+        store
+            .set_connection_group(&[profile.id.clone()], " Lab ")
+            .unwrap();
+        drop(store);
+        let store = Store::open(&dir.join("state.sqlite"), &dir.join("vault")).unwrap();
+        assert_eq!(
+            store.get_server(&profile.id).unwrap().group_name.as_deref(),
+            Some("Lab")
+        );
+        store
+            .set_connection_group(&[profile.id.clone()], "")
+            .unwrap();
+        assert!(store.get_server(&profile.id).unwrap().group_name.is_none());
+        assert!(!dir.join("vault").exists());
+        drop(store);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn system_agent_identity_persists_a_selector_without_resolving_the_environment() {
+        let dir = std::env::temp_dir().join(format!("tw-system-agent-{}", Uuid::new_v4()));
+        let store = Store::open(&dir.join("state.sqlite"), &dir.join("vault")).unwrap();
+        let identity = crate::identities::Identity {
+            id: "system".into(),
+            name: "System SSH agent".into(),
+            username: "alice".into(),
+            provider: crate::identities::IdentityProvider::SshAgent,
+            reference: crate::identities::SYSTEM_AGENT_REFERENCE.into(),
+        };
+        store.create_identity(&identity).unwrap();
+        assert_eq!(store.resolve_identity("system").unwrap(), identity);
+        assert!(!dir.join("vault").exists());
+        drop(store);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn agent_identity_resolution_and_assignment_are_validated_without_unlocking_vault() {
+        let dir = std::env::temp_dir().join(format!("hbox-agent-{}", Uuid::new_v4()));
+        let store = Store::open(&dir.join("state.sqlite"), &dir.join("vault")).unwrap();
+        let identity = crate::identities::Identity {
+            id: "work".into(),
+            name: "Work".into(),
+            username: "alice".into(),
+            provider: crate::identities::IdentityProvider::SshAgent,
+            reference: "/tmp/agent.sock".into(),
+        };
+        store.create_identity(&identity).unwrap();
+        assert!(store.create_identity(&identity).is_err());
+        let mut draft: ServerDraft = serde_json::from_value(serde_json::json!({
+            "name":"Host", "host":"example.test", "username":"ignored", "port":22,
+            "authMethod":"sshAgent", "identityId":"missing"
+        }))
+        .unwrap();
+        assert!(store.save_server(&draft).is_err());
+        assert!(store.list_servers().unwrap().is_empty());
+        draft.identity_id = Some("work".into());
+        let first = store.save_server(&draft).unwrap();
+        let second = store.save_server(&draft).unwrap();
+        assert_eq!(first.username, "alice");
+        assert_eq!(first.auth_method, AuthMethod::SshAgent);
+        assert_eq!(
+            store.get_server(&first.id).unwrap().identity_id.as_deref(),
+            Some("work")
+        );
+        assert!(store.delete_identity("work").is_err());
+        assert_eq!(store.resolve_identity("work").unwrap(), identity);
+        assert!(store.resolve_identity("missing").is_err());
+        draft.id = Some(first.id.clone());
+        draft.auth_method = AuthMethod::Password;
+        draft.identity_id = None;
+        store.save_server(&draft).unwrap();
+        assert!(store.get_server(&first.id).unwrap().identity_id.is_none());
+        assert_eq!(
+            store.get_server(&second.id).unwrap().identity_id.as_deref(),
+            Some("work")
+        );
+        assert!(!dir.join("vault").exists());
+        drop(store);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn opening_and_reopening_store_preserves_vault_bytes() {
+        let directory = std::env::temp_dir().join(format!("hbox-store-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let database = directory.join("state.sqlite");
+        let vault = directory.join("credentials.bin");
+        let existing = b"existing encrypted vault is not read during schema migration";
+        std::fs::write(&vault, existing).unwrap();
+        for _ in 0..2 {
+            let store = Store::open(&database, &vault).unwrap();
+            assert!(store.list_servers().unwrap().is_empty());
+            assert_eq!(std::fs::read(&vault).unwrap(), existing);
+        }
+        assert!(database.with_extension("pre-identities.sqlite").exists());
+        std::fs::remove_dir_all(directory).unwrap();
+    }
 }

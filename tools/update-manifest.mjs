@@ -23,13 +23,14 @@ function keyId(encoded, length) {
 
 /** `signatures` maps asset file names ending in `.sig` to their contents; `assets` lists every asset name. */
 export function createManifest({ version, tag, repository, notes, publicKey, assets, signatures, now = new Date().toISOString() }) {
-  if (!/^\d+\.\d+\.\d+$/.test(version) || tag !== `v${version}`) throw new Error(`Tag ${tag} does not match app version ${version}`);
+  if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?(?:\+[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$/.test(version) || tag !== `v${version}`) throw new Error(`Tag ${tag} does not match app version ${version}`);
   const key = keyId(publicKey, 42);
-  const prefix = `hbox-term-v${version}-`;
+  const prefixes = [`ternway-v${version}-`, `hbox-term-v${version}-`];
   const pattern = new RegExp(`^(linux|darwin)-(${Object.keys(ARCHES).join("|")})-(${Object.keys(BUNDLES).map((name) => name.replaceAll(".", "\\.")).join("|")})\\.sig$`);
   const platforms = {};
   for (const [name, content] of Object.entries(signatures)) {
-    const match = name.startsWith(prefix) && pattern.exec(name.slice(prefix.length));
+    const prefix = prefixes.find((prefix) => name.startsWith(prefix));
+    const match = prefix && pattern.exec(name.slice(prefix.length));
     if (!match) continue;
     const [, os, arch, bundle] = match;
     const [bundleOs, installer] = BUNDLES[bundle];

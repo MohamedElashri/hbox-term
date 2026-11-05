@@ -9,7 +9,7 @@ export interface TitlebarViewData {
 
 export function renderTitlebarView({ platform, context }: TitlebarViewData): string {
   return `<header class="titlebar" data-tauri-drag-region data-platform="${platform}">
-    <div class="titlebar-brand"><span class="titlebar-mark">${icon("logo")}</span><span>hbox-term</span></div>
+    <div class="titlebar-brand"><span class="titlebar-mark">${icon("logo")}</span><span>Ternway</span></div>
     ${context ? `<div class="titlebar-caption"><div class="titlebar-context"><strong>${escapeHtml(context.title)}</strong><span>${escapeHtml(context.detail)}</span></div></div>` : ""}
     <div class="window-controls" aria-label="Window controls">
       <button class="window-control window-control-minimize" data-window="minimize" title="Minimize window" aria-label="Minimize window">${icon("minus")}</button>
@@ -20,7 +20,7 @@ export function renderTitlebarView({ platform, context }: TitlebarViewData): str
 }
 
 export function renderLoadingView(): string {
-  return `<main class="boot-screen"><div class="boot-card"><div class="brand-mark">${icon("logo")}</div><div class="eyebrow">hbox-term</div><h1>Starting up</h1><p>Your shell opens first. Saved servers, keys and credentials stay on this device.</p><div class="loading-line"><span></span></div></div></main>`;
+  return `<main class="boot-screen"><div class="boot-card"><div class="brand-mark">${icon("logo")}</div><div class="eyebrow">Ternway</div><h1>Starting up</h1><p>Your shell opens first. Saved servers, keys and credentials stay on this device.</p><div class="loading-line"><span></span></div></div></main>`;
 }
 
 export function renderWelcomeView(): string {
@@ -32,7 +32,7 @@ export function renderEmptyWorkspaceView(): string {
 }
 
 export function renderErrorView(error: string): string {
-  return `<div class="error-state"><div class="error-icon">${icon("info")}</div><div><strong>hbox-term couldn't complete that request</strong><p>${escapeHtml(error)}</p><button class="button button-quiet" data-action="retry">${icon("refresh")} Refresh this view</button></div></div>`;
+  return `<div class="error-state"><div class="error-icon">${icon("info")}</div><div><strong>Ternway couldn't complete that request</strong><p>${escapeHtml(error)}</p><button class="button button-quiet" data-action="retry">${icon("refresh")} Refresh this view</button></div></div>`;
 }
 
 export function renderInlineErrorView(error: string): string {

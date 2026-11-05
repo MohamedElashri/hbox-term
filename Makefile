@@ -5,7 +5,7 @@ DEBUG_BINARY := src-tauri/target/debug/hbox-term
 RELEASE_BINARY := src-tauri/target/release/hbox-term
 
 .DEFAULT_GOAL := help
-.PHONY: help install dev build build-debug run run-release check test test-ts test-rust lint fmt fmt-check bench clean
+.PHONY: help install dev build build-debug run run-release check test test-ts test-rust lint fmt fmt-check bench clean qa-macos
 
 help: ## List the targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F ':.*## ' '{printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -25,6 +25,12 @@ build: node_modules ## Release bundles for this OS (.deb/.rpm/.AppImage or .app/
 build-debug: node_modules ## Debug binary with the frontend embedded, no bundles
 	npm run tauri build -- --debug --no-bundle
 
+qa-macos: node_modules ## Build an isolated, ad-hoc-signed macOS QA app
+	@test "$$(uname -s)" = Darwin
+	npm run tauri -- build --debug --bundles app --config '{"productName":"Ternway QA","identifier":"dev.elashri.hbox-term.qa","bundle":{"createUpdaterArtifacts":false}}'
+	codesign --force --deep --sign - --identifier dev.elashri.hbox-term.qa "src-tauri/target/debug/bundle/macos/Ternway QA.app"
+	codesign --verify --deep --strict "src-tauri/target/debug/bundle/macos/Ternway QA.app"
+
 run: build-debug ## Build and start the debug binary
 	$(DEBUG_BINARY)
 
@@ -38,7 +44,7 @@ check: node_modules ## Type-check and build the frontend, cargo check the backen
 test: test-ts test-rust ## Run all tests
 
 test-ts: node_modules ## Frontend tests (node --test)
-	node --test tests/
+	npm run test:frontend
 
 test-rust: ## Backend tests (cargo test)
 	cargo test $(CARGO_MANIFEST) --lib

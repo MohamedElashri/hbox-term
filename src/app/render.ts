@@ -1,3 +1,5 @@
+import { collapsedGroups } from "./connection-groups";
+import { unavailableToolReason } from "./navigation";
 import { icon } from "../icons";
 import type { ServerProfile } from "../types";
 import { escapeHtml } from "./format";
@@ -127,7 +129,7 @@ export function renderServerGroups(servers: ServerProfile[]): string {
     group.servers.push(server);
     grouped.set(key, group);
   }
-  return [...grouped.values()].map(({ label, servers: items }) => `<div class="server-group"><div class="server-group-label"><span class="group-label-full">${escapeHtml(label)}</span><span class="group-label-short" aria-hidden="true">${escapeHtml(shortGroupLabel(label))}</span></div>${items.map(renderServerItem).join("")}</div>`).join("");
+  return [...grouped.values()].map(({ label, servers: items }) => `<details class="server-group" data-connection-group="${escapeHtml(groupKey(label))}" ${state.serverQuery || !collapsedGroups.has(groupKey(label)) ? "open" : ""}><summary class="server-group-label"><span class="group-label-full">${escapeHtml(label)}</span><span class="group-label-short" aria-hidden="true">${escapeHtml(shortGroupLabel(label))}</span><span class="group-count">${items.length}</span><button class="icon-button group-edit" data-action="rename-connection-group" data-group="${escapeHtml(groupKey(label))}" data-label="${escapeHtml(label === "Ungrouped" ? "" : label)}" aria-label="Move connections in ${escapeHtml(label)}" title="Rename or move group">${icon("edit")}</button></summary>${items.map(renderServerItem).join("")}</details>`).join("");
 }
 
 export function shortGroupLabel(group: string): string {
@@ -137,14 +139,14 @@ export function shortGroupLabel(group: string): string {
 export function renderServerRail(): string {
   const servers = filteredServers();
   const query = state.serverQuery.trim().toLowerCase();
-  return `<aside class="server-rail" aria-label="Servers">
+  return `<aside class="server-rail" aria-label="Connections">
     <div class="server-rail-flyout">
-      <div class="rail-brand"><span class="brand-mark">${icon("logo")}</span><span class="rail-brand-name">hbox-term</span></div>
+      <div class="rail-brand"><span class="brand-mark">${icon("logo")}</span><span class="rail-brand-name">Ternway</span></div>
       <div class="sidebar-section server-section">
-        <div class="section-label-row"><span class="section-label">Servers</span></div>
-        <label class="sidebar-search"><span>${icon("search")}</span><input data-field="server-search" value="${escapeHtml(state.serverQuery)}" placeholder="Search servers…" aria-label="Search servers and notes"/><kbd>⌘ K</kbd></label>
+        <div class="section-label-row"><span class="section-label">Connections</span></div>
+        <label class="sidebar-search"><span>${icon("search")}</span><input data-field="server-search" value="${escapeHtml(state.serverQuery)}" placeholder="Search connections…" aria-label="Search connections and notes"/><kbd>${platform === "macos" ? "⌘" : "Ctrl"} K</kbd></label>
         <div class="server-list">
-          ${servers.length ? renderServerGroups(servers) : `<div class="server-empty">${query ? "No matching servers" : "No servers saved yet"}</div>`}
+          ${servers.length ? renderServerGroups(servers) : `<div class="server-empty">${query ? "No matching connections" : "Add your first SSH connection"}</div>`}
         </div>
       </div>
       <div class="rail-utilities">
@@ -152,8 +154,7 @@ export function renderServerRail(): string {
         <button class="icon-button" data-action="theme" aria-label="${state.darkMode ? "Switch to light appearance" : "Switch to dark appearance"}" title="${state.darkMode ? "Switch to light appearance" : "Switch to dark appearance"}">${icon(state.darkMode ? "sun" : "moon")}</button>
       </div>
       <div class="server-rail-foot">
-        <button class="icon-button" data-action="add-server" aria-label="Add server" title="Add server">${icon("plus")}</button>
-        <span class="rail-foot-label">New server</span>
+        <button class="button button-quiet library-add" data-action="import-ssh-config">Import SSH config</button><button class="button button-primary library-add" data-action="add-server">${icon("plus")} New connection</button>
       </div>
     </div>
   </aside>`;
@@ -161,11 +162,11 @@ export function renderServerRail(): string {
 
 export function renderSidebar(): string {
   const nav = [
-    ["dashboard", "Overview", "dashboard"],
     ["terminal", "Terminal", "terminal"],
+    ["files", "Files", "files"],
+    ["dashboard", "Overview", "dashboard"],
     ["processes", "Processes", "processes"],
     ["services", "Systemd services", "services"],
-    ["files", "Files", "files"],
     ["disk", "Disk usage", "disk"],
     ["docker", "Container platform", "docker"],
     ["logs", "Logs", "logs"],
@@ -177,18 +178,9 @@ export function renderSidebar(): string {
     ["tunnels", "SSH tunnels", "network"],
     ["administration", "Administration", "settings"],
   ] as const;
-  const unsupported = (view: View): boolean => {
-    const cap = activeCapabilities();
-    if (!cap) return false;
-    if (view === "docker") return !cap.docker && !cap.podman;
-    if (view === "services") return !cap.systemd;
-    if (view === "cron") return !cap.cron;
-    if (view === "packages") return cap.packageManager !== "apt-get";
-    if (view === "network") return !cap.networkTool;
-    return false;
-  };
+  const unsupported = (view: View): boolean => Boolean(unavailableToolReason(view, activeCapabilities()));
   return `<aside class="sidebar">
-    <div class="sidebar-section nav-section"><div class="section-label">Workspace</div>${nav.map(([view, label, iconName]) => `<button class="nav-item ${state.activeView === view ? "active" : ""}" data-view="${view}" ${!activeServerIsConnected() || unsupported(view) ? "disabled" : ""}>${icon(iconName)}<span>${label}</span>${unsupported(view) ? `<small>off</small>` : ""}</button>`).join("")}</div>
+    <div class="sidebar-section nav-section"><div class="section-label">Connection tools</div>${nav.map(([view, label, iconName]) => `<button class="nav-item ${state.activeView === view ? "active" : ""}" data-view="${view}" title="${unavailableToolReason(view, activeCapabilities()) ?? label}" aria-label="${label}" ${!activeServerIsConnected() || unsupported(view) ? "disabled" : ""}>${icon(iconName)}<span>${label}</span>${unsupported(view) ? `<small>Unavailable</small>` : ""}</button>`).join("")}</div>
     ${renderSidebarBottom()}
   </aside>`;
 }
@@ -255,7 +247,7 @@ export function renderConnectedContent(): string {
     accounts: ["Users & groups", "Linux identities, access, and membership."],
     administration: ["Administration", "Firewall, SSH access, security posture, and maintenance."],
     commands: ["Saved commands", "Reusable commands for this server or your whole workspace."],
-    tunnels: ["SSH tunnels", "Local, remote, and SOCKS5 forwarding managed by hbox-term."],
+    tunnels: ["SSH tunnels", "Local, remote, and SOCKS5 forwarding managed by Ternway."],
   };
   const [title, subtitle] = titles[state.activeView];
   const snapshotNotice = state.activeView === "dashboard"
@@ -278,7 +270,7 @@ export function renderConnectPrompt(): string {
   const route = bastion
     ? ` The connection routes through ${escapeHtml(profileRouteLabel(bastion))}.`
     : "";
-  return `<div class="connect-prompt"><div class="connect-prompt-art">${icon("shield")}</div><div class="eyebrow">Connection is idle</div><h2>Ready when you are.</h2><p>Nothing has contacted ${escapeHtml(server.host)} yet. hbox-term will read this connection's saved secret only when you choose to connect.${route}</p><button class="button button-primary" data-action="connect">${icon("play")} Connect to ${escapeHtml(server.name)}</button></div>`;
+  return `<div class="connect-prompt"><div class="connect-prompt-art">${icon("shield")}</div><div class="eyebrow">Connection is idle</div><h2>Ready when you are.</h2><p>Nothing has contacted ${escapeHtml(server.host)} yet. Ternway will read this connection's saved secret only when you choose to connect.${route}</p><button class="button button-primary" data-action="connect">${icon("play")} Connect to ${escapeHtml(server.name)}</button></div>`;
 }
 
 export function renderViewBody(): string {

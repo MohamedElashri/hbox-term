@@ -1,0 +1,84 @@
+Ternway — selected identity, 2026-11-05
+
+Name and pronunciation
+Ternway (tern-way). A tern suggests purposeful travel over distance; “way” suggests
+a path between machines. The name allows the product to grow beyond SSH.
+Shortlist alternatives: Ternlane (a more technical variation), Shelltide
+(more immediately connected to shells, but a softer and narrower identity).
+No domain or trademark availability is claimed. Preliminary web screening found
+a Ternway company in property, but no obvious same-name terminal in these searches:
+https://find-and-update.company-information.service.gov.uk/company/11416427
+PortLoom and PortLark were rejected because they already serve related software:
+https://github.com/lkhmm520/portloom
+https://portlark.com/
+Keelspan was rejected because it is already a software studio:
+https://keelspan.app/
+
+Positioning
+A desktop workspace for local shells and remote machines.
+Tagline: Your machines. One workspace.
+Short description: Local terminals, organized SSH connections and server tools
+for macOS and Linux.
+Voice: direct, composed, practical. Prefer “Connect”, “Import hosts”, and
+“Save connection”. Describe password-manager support accurately; do not imply
+that unverified providers or packaged-app signing have passed live testing.
+
+Mark
+Two folded angular paths form a tern wing and an abstract T. The asymmetry
+represents the movement between a local machine and a remote destination.
+The flat SVGs are editable production candidates, drawn separately from the
+generated concept board. They are not extracted bitmap approximations.
+Minimum clear space: one quarter of the mark's height. Use the symbol alone
+at small sizes. Avoid adding a shell prompt, lock, shield, or extra decoration.
+
+Palette
+Ink #142B3B: brand grounds, title text.
+Sea #227C9D: primary mark, links on light.
+Frost #EDF4F7: light surfaces and reverse mark.
+Amber #E7AF58: restrained highlights, never small text on white.
+Slate #617889: secondary brand detail.
+Sea on dark #4CA6C5: brighter mark variant.
+The About preview uses darker secondary text on light surfaces for legibility.
+Do not recolor terminal ANSI output to fit the brand.
+
+Typography
+Use the native system sans in application chrome and About content.
+Keep JetBrains Mono for terminal output and code.
+Wordmark and banner lettering use Manrope, obtained from the official Google
+Fonts repository under the SIL Open Font License (included as OFL-Manrope.txt).
+Lettering is converted to editable vector outlines, with no runtime font dependency.
+The concept board is raster inspiration and is not the source of final text.
+
+About page
+about-preview.html is a standalone design prototype, with a real theme toggle
+and project links. It shows the version, author, MIT license, platforms, core
+technologies, source code, issue tracker, release notes and license links.
+Production integration should read the runtime version/build metadata,
+provide Copy diagnostics (version, OS/architecture, commit when available),
+and show About from Settings plus the native application menu.
+Keep the full existing license text and attribution; author credit does not
+replace the project's existing copyright notices.
+
+Release implementation notes
+1. Apply the approved display name, app icons, About screen and in-app copy.
+2. Keep the bundle identifier and data/config lookup compatible with existing
+   installations; do not strand saved profiles, vault files or updater trust.
+3. Introduce executable/config aliases deliberately, with regression coverage.
+4. Update packaging, installer, desktop entry, CLI help, release assets and docs.
+5. Preserve the current repository and updater URLs until any repository move
+   is explicitly decided. Generate .icns and PNG sizes from the approved vector.
+6. Re-run macOS/Linux CI and native About/icon checks before updating the PR.
+The Ternway display name, icons and About screen are implemented in the app.
+The signed QA bundle was checked in light/dark modes. The release remains a draft;
+no production installation or repository name was changed.
+
+Files
+concept-board.png — generated image preview (built-in image_gen).
+image-prompt.txt — exact generation prompt.
+mark.svg, mark-on-dark.svg, mark-mono.svg — flat symbol variants.
+app-icon.svg — selected vector app icon master.
+app-icon.png — rendered app icon.
+wordmark.svg — editable horizontal lockup.
+release-banner.svg — 1280x640 release/header artwork.
+tokens.json — machine-readable brand palette and copy.
+about-preview.html — responsive light/dark About prototype.

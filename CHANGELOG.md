@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.0 - 2026-11-05
+
+- Renamed the app to Ternway, with new branding and an About page.
+- Added SSH config import, connection groups and a clearer connection library.
+- Added reusable identities using the standard SSH-agent protocol, with system or custom sockets.
+- Fixed Bash 3.2 command markers and SSH-agent socket handling.
+- Kept existing profiles, settings and updates compatible with the new name.
+
+Known issue: 1Password signing can still stall in the packaged macOS app.
+
 ## 0.1.0 - 2026-10-25
 
 First release, for Linux (x86_64, ARM64) and macOS (Apple Silicon, Intel).

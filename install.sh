@@ -1,5 +1,5 @@
 #!/bin/sh
-# Install hbox-term from GitHub releases on Linux or macOS.
+# Install Ternway (formerly hbox-term) from GitHub releases on Linux or macOS.
 #
 #   curl -fsSL https://raw.githubusercontent.com/MohamedElashri/hbox-term/main/install.sh | sh
 #
@@ -11,7 +11,7 @@ repo=MohamedElashri/hbox-term
 tag=${HBOX_TERM_VERSION:-latest}
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
-die() { echo "hbox-term install: $*" >&2; exit 1; }
+die() { echo "Ternway install: $*" >&2; exit 1; }
 wanted=$tag
 no_release() {
   [ "$wanted" = latest ] && what="no release" || what="no release $wanted"
@@ -45,7 +45,7 @@ case "$(uname -s)" in
     if command -v apt-get >/dev/null 2>&1; then ext='\.deb$'
     elif command -v dnf >/dev/null 2>&1 || command -v zypper >/dev/null 2>&1; then ext='\.rpm$'
     else ext='\.AppImage$'; fi ;;
-  *) die "unsupported system; hbox-term supports Linux and macOS" ;;
+  *) die "unsupported system; Ternway supports Linux and macOS" ;;
 esac
 
 asset=$(grep -E "$arch.*$ext" "$tmp/names" | head -n 1) || true
@@ -60,12 +60,15 @@ file="$tmp/$asset"
 case "$asset" in
   *.dmg)
     hdiutil attach -nobrowse -quiet -mountpoint "$tmp/mnt" "$file"
-    rm -rf /Applications/hbox-term.app
-    cp -R "$tmp/mnt/hbox-term.app" /Applications/
+    app_name=Ternway
+    [ -d "$tmp/mnt/Ternway.app" ] || app_name=hbox-term
+    [ -d "$tmp/mnt/$app_name.app" ] || die "no application bundle found in the disk image"
+    rm -rf "/Applications/$app_name.app"
+    cp -R "$tmp/mnt/$app_name.app" /Applications/
     hdiutil detach -quiet "$tmp/mnt"
     # The app is not notarized; drop the download quarantine so it opens.
-    xattr -dr com.apple.quarantine /Applications/hbox-term.app 2>/dev/null || true
-    echo "Installed /Applications/hbox-term.app" ;;
+    xattr -dr com.apple.quarantine "/Applications/$app_name.app" 2>/dev/null || true
+    echo "Installed /Applications/$app_name.app" ;;
   *.deb) sudo apt-get install -y "$file" ;;
   *.rpm)
     if command -v dnf >/dev/null 2>&1; then sudo dnf install -y "$file"
@@ -73,7 +76,7 @@ case "$asset" in
   *.AppImage)
     mkdir -p "$HOME/.local/bin" "$HOME/.local/share/applications"
     install -m 755 "$file" "$HOME/.local/bin/hbox-term"
-    printf '[Desktop Entry]\nType=Application\nName=hbox-term\nComment=Terminal for local and remote development\nExec=%s\nTerminal=false\nCategories=Development;System;TerminalEmulator;\n' \
+    printf '[Desktop Entry]\nType=Application\nName=Ternway\nComment=Terminal for local and remote development\nExec=%s\nTerminal=false\nCategories=Development;System;TerminalEmulator;\n' \
       "$HOME/.local/bin/hbox-term" > "$HOME/.local/share/applications/hbox-term.desktop"
     echo "Installed $HOME/.local/bin/hbox-term" ;;
 esac
