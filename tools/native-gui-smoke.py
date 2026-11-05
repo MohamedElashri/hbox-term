@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Isolated Linux WebKitGTK end-to-end checks; no browser simulation or live accounts."""
 import base64
+import http.client
 import json
 import os
 from pathlib import Path
@@ -52,7 +53,9 @@ def wait(test, description, timeout=30):
             result = test()
             if result:
                 return result
-        except (RuntimeError, urllib.error.URLError) as error:
+        except (RuntimeError, urllib.error.URLError, http.client.RemoteDisconnected) as error:
+            # WebKit can reset a polling connection while restored webviews attach.
+            # Keep the same bounded assertion; a persistent disconnect still fails.
             last = error
         time.sleep(0.15)
     raise AssertionError(f"Timed out: {description}: {last}")
