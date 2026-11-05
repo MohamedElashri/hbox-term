@@ -17,7 +17,7 @@ export type KeyAction =
 interface Trigger { ctrl: boolean; shift: boolean; alt: boolean; super: boolean; key: string }
 export interface Keybinding { trigger: Trigger; action: KeyAction }
 
-/** Ghostty's Linux defaults (the subset hbox-term implements). */
+/** Ghostty's Linux defaults (the subset ternway implements). */
 export const LINUX_DEFAULTS = [
   "ctrl+shift+c=copy_to_clipboard", "ctrl+shift+v=paste_from_clipboard", "ctrl+shift+a=select_all",
   "ctrl+shift+t=new_tab", "ctrl+shift+w=close_surface",

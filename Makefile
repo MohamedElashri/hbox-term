@@ -1,8 +1,8 @@
-# hbox-term development tasks. `make` lists them.
+# ternway development tasks. `make` lists them.
 
 CARGO_MANIFEST := --manifest-path src-tauri/Cargo.toml
-DEBUG_BINARY := src-tauri/target/debug/hbox-term
-RELEASE_BINARY := src-tauri/target/release/hbox-term
+DEBUG_BINARY := src-tauri/target/debug/ternway
+RELEASE_BINARY := src-tauri/target/release/ternway
 
 .DEFAULT_GOAL := help
 .PHONY: help install dev build build-debug run run-release check test test-ts test-rust lint fmt fmt-check bench clean qa-macos
@@ -27,8 +27,8 @@ build-debug: node_modules ## Debug binary with the frontend embedded, no bundles
 
 qa-macos: node_modules ## Build an isolated, ad-hoc-signed macOS QA app
 	@test "$$(uname -s)" = Darwin
-	npm run tauri -- build --debug --bundles app --config '{"productName":"Ternway QA","identifier":"dev.elashri.hbox-term.qa","bundle":{"createUpdaterArtifacts":false}}'
-	codesign --force --deep --sign - --identifier dev.elashri.hbox-term.qa "src-tauri/target/debug/bundle/macos/Ternway QA.app"
+	npm run tauri -- build --debug --bundles app --config '{"productName":"Ternway QA","identifier":"dev.elashri.ternway.qa","bundle":{"createUpdaterArtifacts":false}}'
+	codesign --force --deep --sign - --identifier dev.elashri.ternway.qa "src-tauri/target/debug/bundle/macos/Ternway QA.app"
 	codesign --verify --deep --strict "src-tauri/target/debug/bundle/macos/Ternway QA.app"
 
 run: build-debug ## Build and start the debug binary
@@ -59,7 +59,7 @@ fmt: ## Format the Rust code
 fmt-check: ## Check formatting of the Rust code
 	cargo fmt $(CARGO_MANIFEST) --check
 
-bench: ## Output throughput benchmark; run it inside hbox-term and another terminal
+bench: ## Output throughput benchmark; run it inside ternway and another terminal
 	bench/throughput.sh
 
 clean: ## Remove build output (frontend dist and Rust target)

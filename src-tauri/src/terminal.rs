@@ -72,7 +72,7 @@ pub fn start(
         .then(|| crate::remote_integration::prepare(&client))
         .and_then(|prepared| {
             prepared
-                .map_err(|error| eprintln!("hbox-term remote shell integration: {error}"))
+                .map_err(|error| eprintln!("ternway remote shell integration: {error}"))
                 .ok()
         })
         .and_then(|dir| crate::remote_integration::command(&dir, request.cwd.as_deref()));

@@ -25,12 +25,11 @@ function keyId(encoded, length) {
 export function createManifest({ version, tag, repository, notes, publicKey, assets, signatures, now = new Date().toISOString() }) {
   if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?(?:\+[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$/.test(version) || tag !== `v${version}`) throw new Error(`Tag ${tag} does not match app version ${version}`);
   const key = keyId(publicKey, 42);
-  const prefixes = [`ternway-v${version}-`, `hbox-term-v${version}-`];
+  const prefix = `ternway-v${version}-`;
   const pattern = new RegExp(`^(linux|darwin)-(${Object.keys(ARCHES).join("|")})-(${Object.keys(BUNDLES).map((name) => name.replaceAll(".", "\\.")).join("|")})\\.sig$`);
   const platforms = {};
   for (const [name, content] of Object.entries(signatures)) {
-    const prefix = prefixes.find((prefix) => name.startsWith(prefix));
-    const match = prefix && pattern.exec(name.slice(prefix.length));
+    const match = name.startsWith(prefix) && pattern.exec(name.slice(prefix.length));
     if (!match) continue;
     const [, os, arch, bundle] = match;
     const [bundleOs, installer] = BUNDLES[bundle];

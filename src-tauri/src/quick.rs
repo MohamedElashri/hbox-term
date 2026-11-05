@@ -1,6 +1,6 @@
 //! The quick terminal (Ghostty's quick terminal, iTerm2's hotkey window): a borderless,
 //! always-on-top window with local shells, shown and hidden by a global hotkey or by running
-//! `hbox-term --toggle-quick` (for desktops where apps cannot grab global keys, such as GNOME on
+//! `ternway --toggle-quick` (for desktops where apps cannot grab global keys, such as GNOME on
 //! Wayland, which also ignores window positions).
 
 use std::sync::Mutex;
@@ -141,7 +141,7 @@ fn place<R: Runtime>(app: &AppHandle<R>, window: &tauri::WebviewWindow<R>) {
 fn create<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<tauri::WebviewWindow<R>> {
     let window =
         WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html?quick=1".into()))
-            .title("hbox-term quick terminal")
+            .title("Ternway quick terminal")
             .decorations(false)
             .always_on_top(true)
             .skip_taskbar(true)
@@ -166,7 +166,7 @@ pub fn toggle<R: Runtime>(app: &AppHandle<R>) {
         None => match create(app) {
             Ok(window) => window,
             Err(error) => {
-                eprintln!("hbox-term quick terminal unavailable: {error}");
+                eprintln!("Ternway quick terminal unavailable: {error}");
                 return;
             }
         },

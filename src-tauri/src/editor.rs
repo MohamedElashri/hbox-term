@@ -12,7 +12,7 @@ use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 static DETECTED: OnceLock<String> = OnceLock::new();
-const MARKER: &str = "__HBOX_EDITOR__";
+const MARKER: &str = "__TERNWAY_EDITOR__";
 const DETECT_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// Editors with their own window; everything else is assumed to run in a terminal.

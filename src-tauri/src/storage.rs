@@ -42,10 +42,10 @@ impl Store {
     pub fn open(path: &Path, credentials_path: &Path) -> Result<Self, String> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)
-                .map_err(|error| format!("Could not create hbox-term data directory: {error}"))?;
+                .map_err(|error| format!("Could not create ternway data directory: {error}"))?;
         }
         let mut connection = Connection::open(path)
-            .map_err(|error| format!("Could not open hbox-term database: {error}"))?;
+            .map_err(|error| format!("Could not open ternway database: {error}"))?;
         connection
             .execute_batch(
                 "PRAGMA foreign_keys = ON;
@@ -90,17 +90,17 @@ impl Store {
                  INSERT INTO schema_version(version)
                  SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM schema_version);",
             )
-            .map_err(|error| format!("Could not initialize hbox-term database: {error}"))?;
+            .map_err(|error| format!("Could not initialize ternway database: {error}"))?;
         let has_jump_host = {
             let mut statement = connection
                 .prepare("PRAGMA table_info(servers)")
-                .map_err(|error| format!("Could not inspect hbox-term database: {error}"))?;
+                .map_err(|error| format!("Could not inspect ternway database: {error}"))?;
             let columns = statement
                 .query_map([], |row| row.get::<_, String>(1))
-                .map_err(|error| format!("Could not inspect hbox-term database: {error}"))?;
+                .map_err(|error| format!("Could not inspect ternway database: {error}"))?;
             columns
                 .collect::<rusqlite::Result<Vec<_>>>()
-                .map_err(|error| format!("Could not inspect hbox-term database: {error}"))?
+                .map_err(|error| format!("Could not inspect ternway database: {error}"))?
                 .iter()
                 .any(|column| column == "jump_host_id")
         };
@@ -110,7 +110,7 @@ impl Store {
                     "ALTER TABLE servers ADD COLUMN jump_host_id TEXT REFERENCES servers(id) ON DELETE SET NULL",
                     [],
                 )
-                .map_err(|error| format!("Could not add bastion support to hbox-term database: {error}"))?;
+                .map_err(|error| format!("Could not add bastion support to ternway database: {error}"))?;
         }
         crate::identities::migrate(&mut connection, path)?;
         Ok(Self {
@@ -182,7 +182,7 @@ impl Store {
         let connection = self
             .connection
             .lock()
-            .map_err(|_| "hbox-term database lock was poisoned".to_string())?;
+            .map_err(|_| "ternway database lock was poisoned".to_string())?;
         let mut statement = connection
             .prepare(
                 "SELECT id, name, host, username, port, auth_method, key_path, group_name,
@@ -204,7 +204,7 @@ impl Store {
         let connection = self
             .connection
             .lock()
-            .map_err(|_| "hbox-term database lock was poisoned".to_string())?;
+            .map_err(|_| "ternway database lock was poisoned".to_string())?;
         connection
             .query_row(
                 "SELECT id, name, host, username, port, auth_method, key_path, group_name,
@@ -303,7 +303,7 @@ impl Store {
         let connection = self
             .connection
             .lock()
-            .map_err(|_| "hbox-term database lock was poisoned".to_string())?;
+            .map_err(|_| "ternway database lock was poisoned".to_string())?;
         let tx = connection
             .unchecked_transaction()
             .map_err(|e| e.to_string())?;
@@ -400,7 +400,7 @@ impl Store {
         let connection = self
             .connection
             .lock()
-            .map_err(|_| "hbox-term database lock was poisoned".to_string())?;
+            .map_err(|_| "ternway database lock was poisoned".to_string())?;
         let updated = connection
             .execute(
                 "UPDATE servers SET name = ?1, updated_at = ?2 WHERE id = ?3",
@@ -419,7 +419,7 @@ impl Store {
         let connection = self
             .connection
             .lock()
-            .map_err(|_| "hbox-term database lock was poisoned".to_string())?;
+            .map_err(|_| "ternway database lock was poisoned".to_string())?;
         connection
             .execute("DELETE FROM servers WHERE id = ?1", [id])
             .map_err(|error| format!("Could not delete server: {error}"))?;
@@ -454,7 +454,7 @@ impl Store {
         let connection = self
             .connection
             .lock()
-            .map_err(|_| "hbox-term database lock was poisoned".to_string())?;
+            .map_err(|_| "ternway database lock was poisoned".to_string())?;
         connection
             .execute(
                 "UPDATE servers SET last_connected_at = ?1 WHERE id = ?2",
@@ -471,7 +471,7 @@ impl Store {
         let connection = self
             .connection
             .lock()
-            .map_err(|_| "hbox-term database lock was poisoned".to_string())?;
+            .map_err(|_| "ternway database lock was poisoned".to_string())?;
         let mut statement = connection.prepare(
             "SELECT id, server_id, name, command FROM saved_commands WHERE server_id IS NULL OR server_id = ?1 ORDER BY name COLLATE NOCASE"
         ).map_err(|error| format!("Could not read saved commands: {error}"))?;
@@ -509,7 +509,7 @@ impl Store {
         let connection = self
             .connection
             .lock()
-            .map_err(|_| "hbox-term database lock was poisoned".to_string())?;
+            .map_err(|_| "ternway database lock was poisoned".to_string())?;
         connection.execute(
             "INSERT INTO saved_commands(id, server_id, name, command) VALUES (?1, ?2, ?3, ?4) ON CONFLICT(id) DO UPDATE SET server_id=excluded.server_id, name=excluded.name, command=excluded.command",
             params![id, input.server_id, name, command],
@@ -526,7 +526,7 @@ impl Store {
         let connection = self
             .connection
             .lock()
-            .map_err(|_| "hbox-term database lock was poisoned".to_string())?;
+            .map_err(|_| "ternway database lock was poisoned".to_string())?;
         connection
             .execute("DELETE FROM saved_commands WHERE id = ?1", [id])
             .map_err(|error| format!("Could not delete command: {error}"))?;
@@ -540,7 +540,7 @@ impl Store {
         let connection = self
             .connection
             .lock()
-            .map_err(|_| "hbox-term database lock was poisoned".to_string())?;
+            .map_err(|_| "ternway database lock was poisoned".to_string())?;
         let mut statement = connection.prepare("SELECT id, server_id, name, kind, bind_host, bind_port, target_host, target_port FROM tunnels WHERE server_id=?1 ORDER BY name COLLATE NOCASE")
             .map_err(|error| format!("Could not read tunnels: {error}"))?;
         let rows = statement
@@ -565,7 +565,7 @@ impl Store {
         let connection = self
             .connection
             .lock()
-            .map_err(|_| "hbox-term database lock was poisoned".to_string())?;
+            .map_err(|_| "ternway database lock was poisoned".to_string())?;
         connection
             .query_row(
                 "SELECT id, server_id, name, kind, bind_host, bind_port, target_host, target_port FROM tunnels WHERE id=?1",
@@ -613,7 +613,7 @@ impl Store {
         let connection = self
             .connection
             .lock()
-            .map_err(|_| "hbox-term database lock was poisoned".to_string())?;
+            .map_err(|_| "ternway database lock was poisoned".to_string())?;
         connection.execute("INSERT INTO tunnels(id,server_id,name,kind,bind_host,bind_port,target_host,target_port) VALUES(?1,?2,?3,?4,?5,?6,?7,?8) ON CONFLICT(id) DO UPDATE SET name=excluded.name,kind=excluded.kind,bind_host=excluded.bind_host,bind_port=excluded.bind_port,target_host=excluded.target_host,target_port=excluded.target_port", params![tunnel.id,tunnel.server_id,tunnel.name,tunnel.kind,tunnel.bind_host,tunnel.bind_port,tunnel.target_host,tunnel.target_port])
             .map_err(|error| format!("Could not save tunnel: {error}"))?;
         Ok(tunnel)
@@ -623,7 +623,7 @@ impl Store {
         let connection = self
             .connection
             .lock()
-            .map_err(|_| "hbox-term database lock was poisoned".to_string())?;
+            .map_err(|_| "ternway database lock was poisoned".to_string())?;
         connection
             .execute("DELETE FROM tunnels WHERE id=?1", [id])
             .map_err(|error| format!("Could not delete tunnel: {error}"))?;
@@ -674,7 +674,7 @@ mod identity_migration_tests {
 
     #[test]
     fn connection_group_changes_are_atomic_and_persist_without_vault_access() {
-        let dir = std::env::temp_dir().join(format!("hbox-groups-{}", Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("ternway-groups-{}", Uuid::new_v4()));
         let store = Store::open(&dir.join("state.sqlite"), &dir.join("vault")).unwrap();
         let draft: ServerDraft = serde_json::from_value(serde_json::json!({
             "name":"Lab", "host":"example.test", "username":"ubuntu", "port":239,
@@ -727,7 +727,7 @@ mod identity_migration_tests {
 
     #[test]
     fn agent_identity_resolution_and_assignment_are_validated_without_unlocking_vault() {
-        let dir = std::env::temp_dir().join(format!("hbox-agent-{}", Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("ternway-agent-{}", Uuid::new_v4()));
         let store = Store::open(&dir.join("state.sqlite"), &dir.join("vault")).unwrap();
         let identity = crate::identities::Identity {
             id: "work".into(),
@@ -773,7 +773,7 @@ mod identity_migration_tests {
 
     #[test]
     fn opening_and_reopening_store_preserves_vault_bytes() {
-        let directory = std::env::temp_dir().join(format!("hbox-store-{}", Uuid::new_v4()));
+        let directory = std::env::temp_dir().join(format!("ternway-store-{}", Uuid::new_v4()));
         std::fs::create_dir_all(&directory).unwrap();
         let database = directory.join("state.sqlite");
         let vault = directory.join("credentials.bin");

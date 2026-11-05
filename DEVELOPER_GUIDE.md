@@ -1,4 +1,4 @@
-# hbox-term developer guide
+# Ternway developer guide
 
 ## Build from source
 
@@ -67,7 +67,7 @@ Keep a backup of the private key: installed copies only accept updates signed wi
 it means users must reinstall by hand. For a local signed build:
 
 ```sh
-export TAURI_SIGNING_PRIVATE_KEY="$PWD/.secrets/hbox-term-updater.key" TAURI_SIGNING_PRIVATE_KEY_PASSWORD=''
+export TAURI_SIGNING_PRIVATE_KEY="$PWD/.secrets/ternway-updater.key" TAURI_SIGNING_PRIVATE_KEY_PASSWORD=''
 make build
 ```
 

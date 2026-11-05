@@ -81,7 +81,7 @@ mod tests {
         let session = ssh2::Session::new().unwrap();
         let mut agent = session.agent().unwrap();
         let missing = std::path::PathBuf::from("/tmp")
-            .join(format!("hbox-missing-{}", uuid::Uuid::new_v4()));
+            .join(format!("ternway-missing-{}", uuid::Uuid::new_v4()));
         agent.set_identity_path(&missing).unwrap();
         assert!(agent.connect().is_err());
         // Unix reuses the descriptor closed by connect failure. Agent::drop must
@@ -101,7 +101,7 @@ mod tests {
         use std::sync::mpsc;
         use std::time::Duration;
         let directory =
-            std::path::PathBuf::from("/tmp").join(format!("hbox-eof-{}", uuid::Uuid::new_v4()));
+            std::path::PathBuf::from("/tmp").join(format!("ternway-eof-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&directory).unwrap();
         let path = directory.join("agent.sock");
         let listener = UnixListener::bind(&path).unwrap();

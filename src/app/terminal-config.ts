@@ -60,7 +60,7 @@ async function resolveTheme(config: TerminalConfig, errors: string[]): Promise<R
   return { config, theme: xtermTheme(DEFAULT_THEME, themeColors, config.colors) };
 }
 
-/** Reads ~/.config/hbox-term/config, its includes and profiles, and applies them to open terminals. */
+/** Reads ~/.config/ternway/config, its includes and profiles, and applies them to open terminals. */
 export async function loadTerminalConfig(announce = false): Promise<void> {
   let loaded: LoadedConfig;
   try {

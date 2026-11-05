@@ -367,7 +367,7 @@ export async function runAction(action: string, target: HTMLElement = document.c
     case "dismiss-error": state.errorMessage = ""; render(); break;
     case "theme":
       state.darkMode = !state.darkMode;
-      localStorage.setItem("hbox-term-theme", state.darkMode ? "dark" : "light");
+      localStorage.setItem("ternway-theme", state.darkMode ? "dark" : "light");
       render();
       // A `theme = light:A,dark:B` config follows the appearance.
       if (state.terminalConfig.config.theme?.includes(":")) void loadTerminalConfig();

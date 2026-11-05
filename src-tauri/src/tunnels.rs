@@ -145,7 +145,7 @@ fn run_local(
                         },
                     ) {
                         Ok(()) => {}
-                        Err(error) => eprintln!("hbox-term tunnel connection failed: {error}"),
+                        Err(error) => eprintln!("ternway tunnel connection failed: {error}"),
                     }
                 });
             }
@@ -181,7 +181,7 @@ fn run_remote(
                         .map_err(|error| format!("Could not reach local tunnel target: {error}"))
                         .and_then(|socket| pump(channel, socket, &running));
                     if let Err(error) = result {
-                        eprintln!("hbox-term remote tunnel connection failed: {error}");
+                        eprintln!("ternway remote tunnel connection failed: {error}");
                     }
                 });
             }

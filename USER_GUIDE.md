@@ -78,8 +78,8 @@ quick-terminal-autohide = true       # hide when it loses focus
 ```
 
 GNOME on Wayland does not let apps grab global keys (and ignores window positions). There, add a
-custom shortcut in Settings → Keyboard that runs `hbox-term --toggle-quick`; that also works on
-every other desktop. Closing the main window quits hbox-term, quick terminal included.
+custom shortcut in Settings → Keyboard that runs `ternway --toggle-quick`; that also works on
+every other desktop. Closing the main window quits Ternway, quick terminal included.
 
 ## Triggers and inline images
 
@@ -108,8 +108,8 @@ prompts and commands (OSC 133) and reports the working directory (OSC 7), which 
 - a desktop notification when a long command finishes, with `notify-on-command-finish = unfocused`
   (or `always`) and `notify-on-command-finish-after = 10s`
 
-SSH sessions get the same with `remote-shell-integration = true`. hbox-term then installs the
-scripts on each server once per version, in `~/.cache/hbox-term/shell-integration/` (over SFTP),
+SSH sessions get the same with `remote-shell-integration = true`. Ternway then installs the
+scripts on each server once per version, in `~/.cache/ternway/shell-integration/` (over SFTP),
 and starts your login shell through them; SSH splits and tabs open in the remote directory. Without
 SFTP the shell starts as usual.
 
@@ -121,13 +121,13 @@ VS Code emit the same sequences and work too.
 In a server's Files view, the terminal button on a file opens it in your editor in a local pane
 (`$VISUAL`/`$EDITOR` from your login shell, or `editor = …` in the config, e.g. `editor = code --wait`).
 Every save is uploaded with the same atomic write as the built-in editor. If the file changed on
-the server since you opened it, hbox-term asks before overwriting. The local copy lives in a
+the server since you opened it, Ternway asks before overwriting. The local copy lives in a
 private temporary directory and is removed when the editor exits.
 
 ## Updates
 
 Settings → **Updates**, or "Check for updates" in the command palette, asks GitHub for the latest
-release. hbox-term never checks on its own. When a newer version exists it shows the release
+release. Ternway never checks on its own. When a newer version exists it shows the release
 notes; **Install update** downloads it, verifies its signature and installs it, and **Restart
 now** starts the new version. Restarting ends the programs running in your terminals.
 
@@ -142,11 +142,11 @@ not restored. Set `window-save-state = never` to turn it off.
 
 ## Configuration
 
-Terminal settings live in `~/.config/hbox-term/config`, in
+Terminal settings live in `~/.config/ternway/config`, in
 [Ghostty's config format](https://ghostty.org/docs/config). The file is created on first run and
 includes your Ghostty config with `config-file = ?~/.config/ghostty/config`, so what you set for
-Ghostty applies here too; lines after the include override it for hbox-term. Changes apply when
-the file is saved. Settings shows the file, any errors, and the Ghostty keys hbox-term ignores.
+Ghostty applies here too; lines after the include override it for Ternway. Changes apply when
+the file is saved. Settings shows the file, any errors, and the Ghostty keys Ternway ignores.
 
 Supported so far: `font-family`, `font-size`, `theme` (including `light:…,dark:…`, resolved from
 Ghostty's theme directories), `background`, `foreground`, `palette`, `cursor-color`, `cursor-text`,
@@ -156,22 +156,22 @@ Ghostty's theme directories), `background`, `foreground`, `palette`, `cursor-col
 `config-file`, `command`, `working-directory`, `env`, `shell-integration`,
 `notify-on-command-finish`, `notify-on-command-finish-after`, `window-save-state`,
 `image-storage-limit`, `quick-terminal-position`, `quick-terminal-size`, `quick-terminal-autohide`
-and `keybind = global:…`, plus hbox-term's own `editor`, `trigger` and (in profiles) `match-host`.
+and `keybind = global:…`, plus Ternway's own `editor`, `trigger` and (in profiles) `match-host`.
 
-**Profiles** are files in `~/.config/hbox-term/profiles/`, in the same format, layered on top of the
+**Profiles** are files in `~/.config/ternway/profiles/`, in the same format, layered on top of the
 main config. Open one with "New tab: <name>" in the command palette. A profile with
 `match-host = prod-*` is used for SSH tabs to servers whose host or name matches, for example to
 give production a different background:
 
 ```
-# ~/.config/hbox-term/profiles/prod
+# ~/.config/ternway/profiles/prod
 match-host = prod-*
 background = 3a1418
 ```
 
 ## Safety and privacy
 
-hbox-term runs on your computer and talks to servers over SSH only. Secrets are encrypted locally.
+Ternway runs on your computer and talks to servers over SSH only. Secrets are encrypted locally.
 Disruptive operations such as firewall changes, account deletion or service actions ask for
 confirmation first; keep an independent recovery path before changing remote access or critical services.
 
@@ -179,8 +179,7 @@ confirmation first; keep an independent recovery path before changing remote acc
 
 Open Settings → About Ternway to view the version, platform, credits and license,
 or copy build details when reporting an issue. Copied details contain only the
-version, OS/architecture, build type and source commit. Existing hbox-term data
-and configuration paths remain compatible after the display-name change.
+version, OS/architecture, build type and source commit.
 
 ## SSH agents
 
@@ -199,10 +198,10 @@ different signing implementation.
 For an explicitly authorized live check against your own test host, run:
 
 ```sh
-HBOX_TEST_SSH_HOST=your-test-host HBOX_TEST_SSH_USER=your-test-user HBOX_TEST_SSH_AGENT_SOCKET=/absolute/path/to/agent.sock cargo test --manifest-path src-tauri/Cargo.toml --lib live_agent_login_and_read_only_command -- --ignored
+TERNWAY_TEST_SSH_HOST=your-test-host TERNWAY_TEST_SSH_USER=your-test-user TERNWAY_TEST_SSH_AGENT_SOCKET=/absolute/path/to/agent.sock cargo test --manifest-path src-tauri/Cargo.toml --lib live_agent_login_and_read_only_command -- --ignored
 ```
 
-HBOX_TEST_SSH_PORT is optional (default 22). If the agent socket override is
+TERNWAY_TEST_SSH_PORT is optional (default 22). If the agent socket override is
 omitted, the test uses SSH_AUTH_SOCK. The check enforces known_hosts, runs a fixed
 read-only printf command, disconnects and removes its temporary profile store.
 A separate opt-in 1Password regression remains available. Protocol support does

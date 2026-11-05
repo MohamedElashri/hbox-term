@@ -416,8 +416,8 @@ pub fn quick_action(
     operation_id: Option<&str>,
 ) -> Result<String, String> {
     let command = match action {
-        "reboot" => "if command -v shutdown >/dev/null 2>&1; then shutdown -r +1 'Scheduled by hbox-term'; elif command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then systemctl reboot; elif command -v reboot >/dev/null 2>&1; then reboot; else echo 'No supported reboot command is installed' >&2; exit 69; fi",
-        "shutdown" => "if command -v shutdown >/dev/null 2>&1; then shutdown -h +1 'Scheduled by hbox-term'; elif command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then systemctl poweroff; elif command -v poweroff >/dev/null 2>&1; then poweroff; else echo 'No supported shutdown command is installed' >&2; exit 69; fi",
+        "reboot" => "if command -v shutdown >/dev/null 2>&1; then shutdown -r +1 'Scheduled by ternway'; elif command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then systemctl reboot; elif command -v reboot >/dev/null 2>&1; then reboot; else echo 'No supported reboot command is installed' >&2; exit 69; fi",
+        "shutdown" => "if command -v shutdown >/dev/null 2>&1; then shutdown -h +1 'Scheduled by ternway'; elif command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then systemctl poweroff; elif command -v poweroff >/dev/null 2>&1; then poweroff; else echo 'No supported shutdown command is installed' >&2; exit 69; fi",
         "clear-cache" => "sync; echo 3 > /proc/sys/vm/drop_caches",
         "restart-ssh" => "if ! { command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; } && ! command -v rc-service >/dev/null 2>&1 && ! command -v service >/dev/null 2>&1; then echo 'No supported service manager is available to restart SSH' >&2; exit 69; fi; nohup sh -c 'sleep 1; if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then systemctl restart ssh.service 2>/dev/null || systemctl restart sshd.service; elif command -v rc-service >/dev/null 2>&1; then rc-service sshd restart 2>/dev/null || rc-service ssh restart; else service ssh restart 2>/dev/null || service sshd restart; fi' >/dev/null 2>&1 &",
         "restart-docker" => "if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then systemctl restart docker.service 2>/dev/null || systemctl restart podman.service; elif command -v rc-service >/dev/null 2>&1; then rc-service docker restart 2>/dev/null || rc-service podman restart; elif command -v service >/dev/null 2>&1; then service docker restart 2>/dev/null || service podman restart; else echo 'No supported service manager is available to restart the container runtime' >&2; exit 69; fi",
@@ -464,11 +464,11 @@ fn validate_simple_name(value: &str, label: &str) -> Result<(), String> {
     }
 }
 
-const COMPOSE_MODE_MARKER: &str = "__HBOX_TERM_COMPOSE_MODE__";
-const COMPOSE_PROJECT_MARKER: &str = "__HBOX_TERM_COMPOSE_PROJECT__";
-const COMPOSE_SERVICES_MARKER: &str = "__HBOX_TERM_COMPOSE_SERVICES__";
-const COMPOSE_CONFIG_MARKER: &str = "__HBOX_TERM_COMPOSE_CONFIG__";
-const COMPOSE_RUNNING_MARKER: &str = "__HBOX_TERM_COMPOSE_RUNNING__";
+const COMPOSE_MODE_MARKER: &str = "__TERNWAY_COMPOSE_MODE__";
+const COMPOSE_PROJECT_MARKER: &str = "__TERNWAY_COMPOSE_PROJECT__";
+const COMPOSE_SERVICES_MARKER: &str = "__TERNWAY_COMPOSE_SERVICES__";
+const COMPOSE_CONFIG_MARKER: &str = "__TERNWAY_COMPOSE_CONFIG__";
+const COMPOSE_RUNNING_MARKER: &str = "__TERNWAY_COMPOSE_RUNNING__";
 const COMPOSE_SCAN_OUTPUT_LIMIT: usize = 16 * 1024 * 1024;
 /// Idle timeout for the Compose scan. The script's own global deadline is
 /// 120 seconds, so this must be longer to let the deadline (not the SSH idle
@@ -482,7 +482,7 @@ const COMPOSE_SCAN_IDLE_TIMEOUT: Duration = Duration::from_secs(150);
 // wedging the scan.
 const COMPOSE_SCAN_SCRIPT: &str = r#"runner=''; mode='none'
 if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then runner='docker compose'; mode='services'; elif command -v docker-compose >/dev/null 2>&1; then runner='docker-compose'; mode='services'; elif command -v podman-compose >/dev/null 2>&1; then runner='podman-compose'; mode='states'; fi
-printf '__HBOX_TERM_COMPOSE_MODE__\t%s\n' "$mode"
+printf '__TERNWAY_COMPOSE_MODE__\t%s\n' "$mode"
 [ -n "$runner" ] || exit 0
 guard=''
 command -v timeout >/dev/null 2>&1 && guard='timeout 15'
@@ -490,12 +490,12 @@ deadline=$(( $(date +%s 2>/dev/null || echo 0) + 120 ))
 for root in "$HOME" /opt /srv /var/www; do [ -d "$root" ] && find "$root" -maxdepth 5 -type f \( -iname 'compose.yml' -o -iname 'compose.yaml' -o -iname 'docker-compose.yml' -o -iname 'docker-compose.yaml' -o -iname '*compose*.yml' -o -iname '*compose*.yaml' \) ! -iname '*override*.yml' ! -iname '*override*.yaml' 2>/dev/null; done | awk '!seen[$0]++' | head -100 | while IFS= read -r path; do
   now=$(date +%s 2>/dev/null || echo 0)
   [ "$now" -ge "$deadline" ] && break
-  printf '\n__HBOX_TERM_COMPOSE_PROJECT__\t%s\n' "$path"
-  printf '\n__HBOX_TERM_COMPOSE_SERVICES__\n'
+  printf '\n__TERNWAY_COMPOSE_PROJECT__\t%s\n' "$path"
+  printf '\n__TERNWAY_COMPOSE_SERVICES__\n'
   $guard $runner -f "$path" config --services 2>/dev/null || true
-  printf '\n__HBOX_TERM_COMPOSE_CONFIG__\n'
+  printf '\n__TERNWAY_COMPOSE_CONFIG__\n'
   $guard $runner -f "$path" config --format json 2>/dev/null || $guard $runner -f "$path" config 2>/dev/null || true
-  printf '\n__HBOX_TERM_COMPOSE_RUNNING__\n'
+  printf '\n__TERNWAY_COMPOSE_RUNNING__\n'
   if [ "$mode" = 'states' ]; then $guard $runner -f "$path" ps --format '{{.State}}' 2>/dev/null || true; else $guard $runner -f "$path" ps --services 2>/dev/null || true; fi
 done
 exit 0"#;

@@ -1,5 +1,5 @@
 //! Shell integration for SSH sessions (`remote-shell-integration = true`): the scripts are
-//! installed once per version in `~/.cache/hbox-term/shell-integration/<version>/` over SFTP, and
+//! installed once per version in `~/.cache/ternway/shell-integration/<version>/` over SFTP, and
 //! the remote login shell is started through them like a local one (zsh via ZDOTDIR, fish via
 //! XDG_DATA_DIRS, bash via an rcfile that acts like a login shell).
 
@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 
 /// Starts `$SHELL` through the integration. Runs under /bin/sh whatever the login shell is;
 /// $1 is the integration directory and $2 an optional directory to start in.
-const LAUNCHER: &str = r#"d="$1"; [ -n "$2" ] && cd "$2" 2>/dev/null; s="${SHELL:-/bin/sh}"; export HBOX_TERM_SHELL_INTEGRATION="$d"; case "${s##*/}" in zsh) if [ -n "${ZDOTDIR+x}" ]; then export HBOX_TERM_ZDOTDIR="$ZDOTDIR"; fi; export ZDOTDIR="$d/zsh"; exec "$s" -l;; bash) exec "$s" --rcfile "$d/bash/login.bash" -i;; fish) export XDG_DATA_DIRS="$d/fish:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}" HBOX_TERM_FISH_DATA_DIR="$d/fish"; exec "$s" -l;; *) exec "$s" -l;; esac"#;
+const LAUNCHER: &str = r#"d="$1"; [ -n "$2" ] && cd "$2" 2>/dev/null; s="${SHELL:-/bin/sh}"; export TERNWAY_SHELL_INTEGRATION="$d"; case "${s##*/}" in zsh) if [ -n "${ZDOTDIR+x}" ]; then export TERNWAY_ZDOTDIR="$ZDOTDIR"; fi; export ZDOTDIR="$d/zsh"; exec "$s" -l;; bash) exec "$s" --rcfile "$d/bash/login.bash" -i;; fish) export XDG_DATA_DIRS="$d/fish:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}" TERNWAY_FISH_DATA_DIR="$d/fish"; exec "$s" -l;; *) exec "$s" -l;; esac"#;
 
 /// A short hash of the scripts, so updated scripts install next to (not over) old ones.
 fn version() -> String {
@@ -33,7 +33,7 @@ pub fn prepare(client: &SshClient) -> Result<String, String> {
         .realpath(Path::new("."))
         .map_err(|error| format!("Could not find the remote home directory: {error}"))?;
     let dir = home
-        .join(".cache/hbox-term/shell-integration")
+        .join(".cache/ternway/shell-integration")
         .join(version());
     if sftp.stat(&dir.join("bash/login.bash")).is_err() {
         for (path, contents) in INTEGRATION_FILES {
@@ -69,7 +69,7 @@ fn quote(value: &str) -> Option<String> {
 pub fn command(dir: &str, cwd: Option<&str>) -> Option<String> {
     let cwd = cwd.and_then(quote).unwrap_or_else(|| "''".into());
     Some(format!(
-        "exec /bin/sh -c {} hbox-term {} {cwd}",
+        "exec /bin/sh -c {} ternway {} {cwd}",
         quote(LAUNCHER)?,
         quote(dir)?
     ))
@@ -82,7 +82,7 @@ mod tests {
 
     #[test]
     fn launcher_runs_under_sh_with_paths_as_arguments() {
-        let dir = std::env::temp_dir().join(format!("hbox-remote-{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("ternway-remote-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         // The launcher execs $SHELL; a fake shell prints how it was started.
         let fake = dir.join("fakesh");
@@ -93,7 +93,7 @@ mod tests {
         .unwrap();
         std::fs::set_permissions(&fake, std::os::unix::fs::PermissionsExt::from_mode(0o755))
             .unwrap();
-        let command = command("/opt/hbox it", Some("/tmp")).unwrap();
+        let command = command("/opt/ternway it", Some("/tmp")).unwrap();
         let output = Command::new("/bin/sh")
             .args(["-c", &command])
             .env("SHELL", &fake)
@@ -104,16 +104,16 @@ mod tests {
         assert!(command.starts_with("exec /bin/sh -c '"));
         // zsh gets the integration ZDOTDIR, bash the login rcfile.
         for (name, expected) in [
-            ("zsh", "args=-l zdotdir=/opt/hbox it/zsh"),
+            ("zsh", "args=-l zdotdir=/opt/ternway it/zsh"),
             (
                 "bash",
-                "args=--rcfile /opt/hbox it/bash/login.bash -i zdotdir=",
+                "args=--rcfile /opt/ternway it/bash/login.bash -i zdotdir=",
             ),
         ] {
             let shell = dir.join(name);
             std::fs::copy(&fake, &shell).unwrap();
             let output = Command::new("/bin/sh")
-                .args(["-c", &super::command("/opt/hbox it", None).unwrap()])
+                .args(["-c", &super::command("/opt/ternway it", None).unwrap()])
                 .env("SHELL", &shell)
                 .output()
                 .unwrap();

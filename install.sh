@@ -1,14 +1,14 @@
 #!/bin/sh
-# Install Ternway (formerly hbox-term) from GitHub releases on Linux or macOS.
+# Install Ternway from GitHub releases on Linux or macOS.
 #
-#   curl -fsSL https://raw.githubusercontent.com/MohamedElashri/hbox-term/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/MohamedElashri/ternway/main/install.sh | sh
 #
-# HBOX_TERM_VERSION=v0.1.0 pins a release (default: latest). An authenticated `gh` CLI is used
+# TERNWAY_VERSION=v0.1.0 pins a release (default: latest). An authenticated `gh` CLI is used
 # when available, which avoids API rate limits.
 set -eu
 
-repo=MohamedElashri/hbox-term
-tag=${HBOX_TERM_VERSION:-latest}
+repo=MohamedElashri/ternway
+tag=${TERNWAY_VERSION:-latest}
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 die() { echo "Ternway install: $*" >&2; exit 1; }
@@ -16,7 +16,7 @@ wanted=$tag
 no_release() {
   [ "$wanted" = latest ] && what="no release" || what="no release $wanted"
   die "$what yet. Build from source instead:
-  git clone https://github.com/$repo && cd hbox-term && make build"
+  git clone https://github.com/$repo && cd ternway && make build"
 }
 
 if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
@@ -61,7 +61,6 @@ case "$asset" in
   *.dmg)
     hdiutil attach -nobrowse -quiet -mountpoint "$tmp/mnt" "$file"
     app_name=Ternway
-    [ -d "$tmp/mnt/Ternway.app" ] || app_name=hbox-term
     [ -d "$tmp/mnt/$app_name.app" ] || die "no application bundle found in the disk image"
     rm -rf "/Applications/$app_name.app"
     cp -R "$tmp/mnt/$app_name.app" /Applications/
@@ -75,8 +74,8 @@ case "$asset" in
     else sudo zypper --non-interactive install --allow-unsigned-rpm "$file"; fi ;;
   *.AppImage)
     mkdir -p "$HOME/.local/bin" "$HOME/.local/share/applications"
-    install -m 755 "$file" "$HOME/.local/bin/hbox-term"
+    install -m 755 "$file" "$HOME/.local/bin/ternway"
     printf '[Desktop Entry]\nType=Application\nName=Ternway\nComment=Terminal for local and remote development\nExec=%s\nTerminal=false\nCategories=Development;System;TerminalEmulator;\n' \
-      "$HOME/.local/bin/hbox-term" > "$HOME/.local/share/applications/hbox-term.desktop"
-    echo "Installed $HOME/.local/bin/hbox-term" ;;
+      "$HOME/.local/bin/ternway" > "$HOME/.local/share/applications/ternway.desktop"
+    echo "Installed $HOME/.local/bin/ternway" ;;
 esac

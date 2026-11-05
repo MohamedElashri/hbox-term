@@ -18,9 +18,9 @@ use zeroize::Zeroizing;
 const STREAM_POLL_INTERVAL: Duration = Duration::from_millis(20);
 const KEEPALIVE_RETRY_DELAY: Duration = Duration::from_secs(1);
 const MAX_KEEPALIVE_FAILURES: u8 = 3;
-const ACCESS_STATUS_MARKER: &str = "__HBOX_TERM_LOG_ACCESS_STATUS__";
-const UID_MARKER: &str = "__HBOX_TERM_LOG_UID__";
-const PASSWORDLESS_SUDO_MARKER: &str = "__HBOX_TERM_LOG_PASSWORDLESS_SUDO__";
+const ACCESS_STATUS_MARKER: &str = "__TERNWAY_LOG_ACCESS_STATUS__";
+const UID_MARKER: &str = "__TERNWAY_LOG_UID__";
+const PASSWORDLESS_SUDO_MARKER: &str = "__TERNWAY_LOG_PASSWORDLESS_SUDO__";
 
 #[derive(Clone)]
 pub struct LogSession {

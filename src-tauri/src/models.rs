@@ -505,7 +505,7 @@ pub struct TerminalRequest {
     pub cols: u32,
     pub rows: u32,
     pub command: Option<String>,
-    /// Start the login shell through hbox-term's integration (remote-shell-integration).
+    /// Start the login shell through ternway's integration (remote-shell-integration).
     #[serde(default)]
     pub shell_integration: bool,
     /// Directory to start in, as reported by the shell of the pane this one was split from.

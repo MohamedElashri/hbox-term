@@ -78,7 +78,7 @@ export async function setInterfaceScale(scale: number, announce = true): Promise
   try {
     await appWebview.setZoom(scale);
     state.interfaceScale = scale;
-    localStorage.setItem("hbox-term-interface-scale", String(scale));
+    localStorage.setItem("ternway-interface-scale", String(scale));
     syncInterfaceScaleControls();
     if (announce) showToast(`Interface scale set to ${Math.round(scale * 100)}%.`, "info");
   } catch (error) {

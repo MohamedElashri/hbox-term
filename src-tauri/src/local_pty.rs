@@ -38,12 +38,12 @@ pub(crate) const INTEGRATION_FILES: [(&str, &str); 4] = [
         include_str!("../shell-integration/zsh/.zshenv"),
     ),
     (
-        "fish/vendor_conf.d/hbox-term.fish",
-        include_str!("../shell-integration/fish/vendor_conf.d/hbox-term.fish"),
+        "fish/vendor_conf.d/ternway.fish",
+        include_str!("../shell-integration/fish/vendor_conf.d/ternway.fish"),
     ),
     (
-        "bash/hbox-term.bash",
-        include_str!("../shell-integration/bash/hbox-term.bash"),
+        "bash/ternway.bash",
+        include_str!("../shell-integration/bash/ternway.bash"),
     ),
     (
         "bash/login.bash",
@@ -81,7 +81,7 @@ fn shell_name(program: &str) -> &str {
 }
 
 /// Sets up OSC 133/OSC 7 integration for zsh (via ZDOTDIR) and fish (via XDG_DATA_DIRS); bash
-/// is started with an rcfile in `start`. `HBOX_TERM_SHELL_INTEGRATION` points at the scripts.
+/// is started with an rcfile in `start`. `TERNWAY_SHELL_INTEGRATION` points at the scripts.
 fn apply_shell_integration(command: &mut CommandBuilder, mode: Option<&str>, program: &str) {
     let Some(root) = INTEGRATION_DIR.get() else {
         return;
@@ -99,7 +99,7 @@ fn apply_shell_integration_at(
     if mode == "none" {
         return;
     }
-    command.env("HBOX_TERM_SHELL_INTEGRATION", root);
+    command.env("TERNWAY_SHELL_INTEGRATION", root);
     let shell = if mode == "detect" {
         shell_name(program)
     } else {
@@ -108,7 +108,7 @@ fn apply_shell_integration_at(
     match shell {
         "zsh" => {
             if let Some(original) = std::env::var_os("ZDOTDIR") {
-                command.env("HBOX_TERM_ZDOTDIR", original);
+                command.env("TERNWAY_ZDOTDIR", original);
             }
             command.env("ZDOTDIR", root.join("zsh"));
         }
@@ -121,7 +121,7 @@ fn apply_shell_integration_at(
                 "XDG_DATA_DIRS",
                 format!("{}:{existing}", data_dir.display()),
             );
-            command.env("HBOX_TERM_FISH_DATA_DIR", data_dir);
+            command.env("TERNWAY_FISH_DATA_DIR", data_dir);
         }
         _ => {}
     }
@@ -207,7 +207,7 @@ fn spawn(
         .map_err(|error| format!("Could not open a pseudo-terminal: {error}"))?;
     command.env("TERM", "xterm-256color");
     command.env("COLORTERM", "truecolor");
-    command.env("TERM_PROGRAM", "hbox-term");
+    command.env("TERM_PROGRAM", "ternway");
     command.env("TERM_PROGRAM_VERSION", env!("CARGO_PKG_VERSION"));
     let child = pty
         .slave
@@ -422,7 +422,7 @@ mod tests {
         {
             return;
         }
-        let home = std::env::temp_dir().join(format!("hbox-zsh-{}", Uuid::new_v4()));
+        let home = std::env::temp_dir().join(format!("ternway-zsh-{}", Uuid::new_v4()));
         std::fs::create_dir_all(&home).unwrap();
         write_shell_integration(&home).unwrap();
         let (frames, received) = mpsc::channel();
@@ -493,7 +493,7 @@ mod tests {
     }
 
     fn assert_bash_integration(program: &str) {
-        let home = std::env::temp_dir().join(format!("hbox-bash-{}", Uuid::new_v4()));
+        let home = std::env::temp_dir().join(format!("ternway-bash-{}", Uuid::new_v4()));
         std::fs::create_dir_all(&home).unwrap();
         std::fs::write(home.join(".bash_profile"), "PROMPT_COMMAND=': user-prompt'\n").unwrap();
         write_shell_integration(&home).unwrap();
@@ -554,8 +554,8 @@ mod tests {
 
     #[test]
     fn runs_input_and_reports_exit() {
-        let (output, message) = run_shell("echo hbox-$((40 + 2))\nexit 3\n");
-        assert!(output.contains("hbox-42"), "unexpected output: {output:?}");
+        let (output, message) = run_shell("echo ternway-$((40 + 2))\nexit 3\n");
+        assert!(output.contains("ternway-42"), "unexpected output: {output:?}");
         assert_eq!(message, "Process exited with code 3");
     }
 
@@ -563,7 +563,7 @@ mod tests {
     fn sets_terminal_environment() {
         let (output, _) = run_shell("echo \"$TERM|$COLORTERM|$TERM_PROGRAM\"\nexit\n");
         assert!(
-            output.contains("xterm-256color|truecolor|hbox-term"),
+            output.contains("xterm-256color|truecolor|ternway"),
             "unexpected output: {output:?}"
         );
     }

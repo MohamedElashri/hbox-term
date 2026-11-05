@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
 # Terminal output throughput benchmark.
 #
-# Run the same command inside hbox-term and inside a reference terminal (Ghostty, iTerm2),
+# Run the same command inside ternway and inside a reference terminal (Ghostty, iTerm2),
 # in a window of the same size, and compare the MB/s lines:
 #
 #   bench/throughput.sh            # 64 MiB, 3 runs
 #   bench/throughput.sh 256 5      # 256 MiB, 5 runs
 #
 # The time is how long the terminal takes to accept the output, so a slow renderer shows
-# up as lower throughput (hbox-term's flow control slows `cat` instead of buffering).
+# up as lower throughput (ternway's flow control slows `cat` instead of buffering).
 set -euo pipefail
 
 size_mib=${1:-64}
 runs=${2:-3}
-data=${TMPDIR:-/tmp}/hbox-term-bench-${size_mib}m.txt
+data=${TMPDIR:-/tmp}/ternway-bench-${size_mib}m.txt
 
 if [[ ! -s $data ]]; then
   echo "Generating ${size_mib} MiB of test output in ${data}…"
@@ -47,6 +47,6 @@ for run in $(seq 1 "$runs"); do
   results+=("$(python3 -c "print(f'{$bytes / ($end - $start) / 1048576:.1f}')")")
 done
 
-printf '\n\033[1mhbox-term throughput benchmark\033[0m\n'
+printf '\n\033[1mternway throughput benchmark\033[0m\n'
 printf 'terminal: %s   size: %s MiB   window: %sx%s\n' "${TERM_PROGRAM:-unknown}" "$size_mib" "$(tput cols)" "$(tput lines)"
 for index in "${!results[@]}"; do printf '  run %d: %s MB/s\n' "$((index + 1))" "${results[$index]}"; done

@@ -1,5 +1,5 @@
 // Interprets Ghostty-format config entries (read and include-resolved by src-tauri/src/config.rs).
-// Later entries win, like Ghostty. Keys hbox-term does not implement are reported, not errors.
+// Later entries win, like Ghostty. Keys ternway does not implement are reported, not errors.
 
 export interface ConfigEntry { file: string; line: number; key: string; value: string }
 
@@ -37,7 +37,7 @@ export interface TerminalConfig {
   /** `home`, `inherit` (the focused pane's directory) or a path. */
   workingDirectory: string;
   env: [string, string][];
-  /** hbox-term: SSH tabs to servers matching one of these globs use the profile. */
+  /** ternway: SSH tabs to servers matching one of these globs use the profile. */
   matchHost: string[];
   /** Ghostty's notify-on-command-finish: never, unfocused or always. */
   notifyOnCommandFinish: "never" | "unfocused" | "always";
@@ -45,26 +45,26 @@ export interface TerminalConfig {
   notifyOnCommandFinishAfter: number;
   /** Ghostty's shell-integration: none, detect, or a shell name. */
   shellIntegration: string;
-  /** hbox-term: command to edit remote files with; defaults to $VISUAL/$EDITOR. */
+  /** ternway: command to edit remote files with; defaults to $VISUAL/$EDITOR. */
   editor: string | null;
   /** Ghostty's window-save-state: restore local tabs, layout and scrollback unless `never`. */
   windowSaveState: "default" | "never" | "always";
   /** Ghostty's image-storage-limit in bytes; 0 turns inline images off. */
   imageStorageLimit: number;
-  /** hbox-term (from iTerm2): actions on output lines matching a pattern. */
+  /** ternway (from iTerm2): actions on output lines matching a pattern. */
   triggers: Trigger[];
   /** Ghostty's quick terminal: top, bottom, left, right or center. */
   quickTerminalPosition: string;
   /** Ghostty's quick-terminal-size, e.g. `40%` or `40%,800px`; empty for the default. */
   quickTerminalSize: string;
   quickTerminalAutohide: boolean;
-  /** hbox-term: install the shell integration on servers and start SSH shells through it. */
+  /** ternway: install the shell integration on servers and start SSH shells through it. */
   remoteShellIntegration: boolean;
 }
 
 export interface ParsedConfig {
   config: TerminalConfig;
-  /** Keys hbox-term does not support yet, with where they were set. */
+  /** Keys ternway does not support yet, with where they were set. */
   ignored: string[];
   errors: string[];
 }
@@ -230,7 +230,7 @@ export function parseConfig(entries: ConfigEntry[]): ParsedConfig {
         if (value === "default" || value === "never" || value === "always") config.windowSaveState = value; else invalid();
         break;
       // Ghostty's cursor/sudo/title/ssh-* features need nothing extra here: titles always
-      // apply and hbox-term's TERM is the widely known xterm-256color.
+      // apply and ternway's TERM is the widely known xterm-256color.
       case "shell-integration-features": break;
       case "working-directory": config.workingDirectory = value || "inherit"; break;
       case "env": {
