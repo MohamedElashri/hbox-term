@@ -486,8 +486,16 @@ mod tests {
 
     #[test]
     fn bash_integration_through_the_login_rcfile() {
+        assert_bash_integration("bash");
+        // The system Bash is 3.2 on macOS, even when Homebrew Bash is on PATH.
+        #[cfg(target_os = "macos")]
+        assert_bash_integration("/bin/bash");
+    }
+
+    fn assert_bash_integration(program: &str) {
         let home = std::env::temp_dir().join(format!("hbox-bash-{}", Uuid::new_v4()));
         std::fs::create_dir_all(&home).unwrap();
+        std::fs::write(home.join(".bash_profile"), "PROMPT_COMMAND=': user-prompt'\n").unwrap();
         write_shell_integration(&home).unwrap();
         let root = home.join("shell-integration");
         let (frames, received) = mpsc::channel();
@@ -508,7 +516,7 @@ mod tests {
             env: Vec::new(),
             shell_integration: Some("bash".into()),
         };
-        let mut command = CommandBuilder::new("bash");
+        let mut command = CommandBuilder::new(program);
         command.args([
             "--rcfile",
             &root.join("bash/login.bash").display().to_string(),
@@ -529,7 +537,10 @@ mod tests {
         }
         let text = String::from_utf8_lossy(&text);
         assert!(text.contains("\x1b]133;A\x07"), "no prompt mark: {text:?}");
-        assert!(text.contains("\x1b]133;C\x07"), "no command mark: {text:?}");
+        assert_eq!(
+            text.matches("\x1b]133;C\x07").count(), 3,
+            "expected one command mark for each input line, excluding prompt hooks: {text:?}"
+        );
         assert!(
             text.contains("\x1b]133;D;1\x07"),
             "no failure mark: {text:?}"

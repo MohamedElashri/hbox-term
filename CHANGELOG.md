@@ -11,6 +11,7 @@ Preview release of the redesigned connection library and SSH-agent identities.
 - Collapsible groups with connection counts, remembered expansion state, and rename/move controls.
 - Existing-group suggestions and a Settings icon distinct from the appearance toggle.
 - Capability-aware navigation and improved Escape behavior in custom selectors.
+- Bash command markers work with macOS system Bash 3.2 as well as modern Bash, with prompt hooks excluded.
 
 ### SSH identities and storage
 
