@@ -116,6 +116,14 @@ impl Store {
                 .map_err(|error| format!("Could not add bastion support to ternway database: {error}"))?;
         }
         crate::identities::migrate(&mut connection, path)?;
+        connection
+            .execute_batch(
+                "CREATE TABLE IF NOT EXISTS openssh_connections (
+            server_id TEXT PRIMARY KEY NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+            reference_json TEXT NOT NULL
+        );",
+            )
+            .map_err(|e| format!("Could not initialize OpenSSH connections: {e}"))?;
         Ok(Self {
             connection: Arc::new(Mutex::new(connection)),
             credentials: CredentialStore::open(credentials_path)?,
@@ -243,7 +251,8 @@ impl Store {
                         tags_json, favorite, created_at, updated_at, last_connected_at,
                         jump_host_id,
                         COALESCE((SELECT notes FROM server_notes WHERE server_id = servers.id), ''),
-                        (SELECT identity_id FROM connection_identities WHERE server_id = servers.id)
+                        (SELECT identity_id FROM connection_identities WHERE server_id = servers.id),
+                        (SELECT reference_json FROM openssh_connections WHERE server_id = servers.id)
                  FROM servers ORDER BY favorite DESC, name COLLATE NOCASE ASC",
             )
             .map_err(|error| format!("Could not read servers: {error}"))?;
@@ -265,7 +274,8 @@ impl Store {
                         tags_json, favorite, created_at, updated_at, last_connected_at,
                         jump_host_id,
                         COALESCE((SELECT notes FROM server_notes WHERE server_id = servers.id), ''),
-                        (SELECT identity_id FROM connection_identities WHERE server_id = servers.id)
+                        (SELECT identity_id FROM connection_identities WHERE server_id = servers.id),
+                        (SELECT reference_json FROM openssh_connections WHERE server_id = servers.id)
                  FROM servers WHERE id = ?1",
                 [id],
                 row_to_server,
@@ -277,7 +287,28 @@ impl Store {
 
     pub fn save_server(&self, draft: &ServerDraft) -> Result<ServerProfile, String> {
         let name = required(&draft.name, "server name")?;
-        let host = required(&draft.host, "host")?;
+        let open_ssh = if draft.auth_method == AuthMethod::OpenSsh {
+            if draft.jump_host_id.is_some()
+                || [&draft.password, &draft.key_passphrase, &draft.sudo_password]
+                    .into_iter()
+                    .any(|v| v.as_ref().is_some_and(|v| !v.is_empty()))
+            {
+                return Err("OpenSSH connections use configuration routing and terminal authentication, not managed credentials".into());
+            }
+            Some(crate::openssh::validate_reference(
+                draft
+                    .open_ssh
+                    .as_ref()
+                    .ok_or("Choose an OpenSSH host alias")?,
+            )?)
+        } else {
+            None
+        };
+        let host = if let Some(reference) = &open_ssh {
+            reference.alias.clone()
+        } else {
+            required(&draft.host, "host")?
+        };
         let identity = if draft.auth_method == AuthMethod::SshAgent {
             let identity = self.resolve_identity(
                 draft
@@ -292,13 +323,17 @@ impl Store {
         } else {
             None
         };
-        let username = required(
-            identity
-                .as_ref()
-                .map(|i| i.username.as_str())
-                .unwrap_or(&draft.username),
-            "username",
-        )?;
+        let username = if open_ssh.is_some() {
+            String::new()
+        } else {
+            required(
+                identity
+                    .as_ref()
+                    .map(|i| i.username.as_str())
+                    .unwrap_or(&draft.username),
+                "username",
+            )?
+        };
         if !(1..=u16::MAX as u32).contains(&draft.port) {
             return Err("Port must be between 1 and 65535".to_string());
         }
@@ -334,6 +369,7 @@ impl Store {
             AuthMethod::Password => "password",
             AuthMethod::PrivateKey => "privateKey",
             AuthMethod::SshAgent => "sshAgent",
+            AuthMethod::OpenSsh => "openSsh",
         };
         let is_new = existing.is_none();
         let has_new_secret = [
@@ -409,6 +445,20 @@ impl Store {
             )
             .map_err(|error| format!("Could not save server notes: {error}"))?;
         crate::identities::assign(&tx, &id, identity.as_ref().map(|i| i.id.as_str()))?;
+        if let Some(reference) = &open_ssh {
+            tx.execute(
+                "INSERT INTO openssh_connections (server_id, reference_json) VALUES (?1, ?2)
+                ON CONFLICT(server_id) DO UPDATE SET reference_json=excluded.reference_json",
+                params![
+                    id,
+                    serde_json::to_string(reference).map_err(|e| e.to_string())?
+                ],
+            )
+            .map_err(|e| e.to_string())?;
+        } else {
+            tx.execute("DELETE FROM openssh_connections WHERE server_id=?1", [&id])
+                .map_err(|e| e.to_string())?;
+        }
         tx.commit().map_err(|e| e.to_string())?;
         drop(connection);
 
@@ -449,6 +499,9 @@ impl Store {
             let profile = self
                 .get_server(&current_id)
                 .map_err(|_| "The selected bastion profile no longer exists".to_string())?;
+            if profile.auth_method == AuthMethod::OpenSsh {
+                return Err("Managed bastions cannot use OpenSSH-linked connections; configure ProxyJump in OpenSSH instead".into());
+            }
             let Some(next) = profile.jump_host_id else {
                 return Ok(());
             };
@@ -497,17 +550,30 @@ impl Store {
             host: source.host,
             username: source.username,
             port: source.port.into(),
-            auth_method: source.auth_method,
+            auth_method: source.auth_method.clone(),
             identity_id: source.identity_id,
+            open_ssh: source.open_ssh,
             key_path: source.key_path,
             jump_host_id: source.jump_host_id,
             group_name: source.group_name,
             tags: source.tags,
             notes: source.notes,
             favorite: false,
-            password: self.credentials.get(id, "password")?,
-            key_passphrase: self.get_secret(id, "key-passphrase")?,
-            sudo_password: self.get_secret(id, "sudo-password")?,
+            password: if source.auth_method == AuthMethod::OpenSsh {
+                None
+            } else {
+                self.credentials.get(id, "password")?
+            },
+            key_passphrase: if source.auth_method == AuthMethod::OpenSsh {
+                None
+            } else {
+                self.get_secret(id, "key-passphrase")?
+            },
+            sudo_password: if source.auth_method == AuthMethod::OpenSsh {
+                None
+            } else {
+                self.get_secret(id, "sudo-password")?
+            },
         };
         self.save_server(&draft)
     }
@@ -712,7 +778,21 @@ fn row_to_server(row: &rusqlite::Row<'_>) -> rusqlite::Result<ServerProfile> {
         username: row.get(3)?,
         port: row.get(4)?,
         identity_id: row.get(15)?,
-        auth_method: if auth_method == "sshAgent" {
+        open_ssh: row
+            .get::<_, Option<String>>(16)?
+            .map(|value| {
+                serde_json::from_str(&value).map_err(|error| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        16,
+                        rusqlite::types::Type::Text,
+                        Box::new(error),
+                    )
+                })
+            })
+            .transpose()?,
+        auth_method: if auth_method == "openSsh" {
+            AuthMethod::OpenSsh
+        } else if auth_method == "sshAgent" {
             AuthMethod::SshAgent
         } else if auth_method == "privateKey" {
             AuthMethod::PrivateKey

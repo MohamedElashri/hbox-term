@@ -125,6 +125,26 @@ fn expand_path(value: &str) -> Result<PathBuf, String> {
     Ok(PathBuf::from(value))
 }
 
+// These Include tokens depend only on this machine, so discovery can expand them
+// without evaluating a host, executing Match, or contacting the network.
+fn local_include(value: &str) -> Option<String> {
+    let mut expanded = String::new();
+    let mut chars = value.chars();
+    while let Some(ch) = chars.next() {
+        if ch != '%' {
+            expanded.push(ch);
+            continue;
+        }
+        match chars.next()? {
+            '%' => expanded.push('%'),
+            'd' => expanded.push_str(&home().to_string_lossy()),
+            'u' => expanded.push_str(&std::env::var("USER").ok()?),
+            _ => return None,
+        }
+    }
+    Some(expanded)
+}
+
 fn lines(
     path: &Path,
     base: &Path,
@@ -157,13 +177,11 @@ fn lines(
         };
         if directive.fields[0].eq_ignore_ascii_case("include") {
             for name in &directive.fields[1..] {
-                if name.contains('%') {
-                    directive.issue = Some(
-                        "Include uses dynamic tokens; configure this connection manually".into(),
-                    );
+                let Some(name) = local_include(name) else {
+                    directive.issue = Some("Include uses connection-dependent tokens; OpenSSH resolves it when connecting".into());
                     continue;
-                }
-                let path = expand_path(name)?;
+                };
+                let path = expand_path(&name)?;
                 let path = if path.is_absolute() {
                     path
                 } else {
@@ -497,6 +515,30 @@ mod tests {
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("config"), config).unwrap();
         dir
+    }
+
+    #[test]
+    fn include_discovery_expands_local_tokens_without_a_connection() {
+        assert_eq!(
+            local_include("%d/.ssh/config").unwrap(),
+            format!("{}/.ssh/config", home().display())
+        );
+        assert_eq!(local_include("%%h").as_deref(), Some("%h"));
+        assert!(local_include("%h/config").is_none());
+        let dir = fixture("");
+        fs::write(
+            dir.join("%-extra.conf"),
+            "Host local-token-host\n User qa\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.join("config"),
+            format!("Include {}/%%-extra.conf\n", dir.display()),
+        )
+        .unwrap();
+        let entries = read(&dir.join("config")).unwrap();
+        assert_eq!(entries[0].alias, "local-token-host");
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

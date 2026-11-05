@@ -134,3 +134,15 @@ test("password entry survives a background redraw without crossing connection re
   assert.equal(root.querySelector<HTMLInputElement>('[name="password"]')!.value, "");
   dom.window.close();
 });
+
+test("SSH import choices and source file survive background terminal redraws", () => {
+  const { dom, root } = fixture();
+  root.innerHTML = '<form data-form="ssh-import" data-connection-id="ssh-import"><input name="path" value="/tmp/custom config"><input type="checkbox" name="hosts" value="1" checked><select name="importMode"><option value="linked">Linked</option></select></form>';
+  const previous = root.querySelector<HTMLFormElement>("form")!;
+  root.innerHTML = '<form data-form="ssh-import" data-connection-id="ssh-import"><input name="path" value="~/.ssh/config"></form>';
+  restoreConnectionForm(root, previous);
+  assert.equal(root.querySelector("form"), previous);
+  assert.equal(previous.querySelector<HTMLInputElement>('[name="path"]')!.value, "/tmp/custom config");
+  assert.equal(previous.querySelector<HTMLInputElement>('[name="hosts"]')!.checked, true);
+  dom.window.close();
+});

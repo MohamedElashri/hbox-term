@@ -20,3 +20,15 @@ test("configuration values render as text", () => {
   assert.equal(dom.window.document.querySelector("img,script"), null);
   dom.window.close();
 });
+
+test("linked mode enables advanced aliases for explicit selection without implying static compatibility", () => {
+  const dom = new JSDOM(renderImportChoices([{ alias: "proxy", issues: ["proxycommand requires manual configuration"] }, { alias: "git", service: "Git service" }, { alias: "simple" }], true));
+  const boxes = [...dom.window.document.querySelectorAll<HTMLInputElement>("input")];
+  assert.equal(boxes[0].disabled, false);
+  assert.equal(boxes[0].checked, false);
+  assert.equal(boxes[1].checked, false);
+  assert.equal(boxes[2].checked, true);
+  assert.match(dom.window.document.body.textContent!, /OpenSSH resolves advanced settings/);
+  assert.doesNotMatch(dom.window.document.body.textContent!, /requires manual configuration/);
+  dom.window.close();
+});

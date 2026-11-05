@@ -9,12 +9,22 @@ pub enum AuthMethod {
     Password,
     PrivateKey,
     SshAgent,
+    OpenSsh,
 }
 
 impl Default for AuthMethod {
     fn default() -> Self {
         Self::Password
     }
+}
+
+/// A live reference, never a flattened copy of OpenSSH configuration.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenSshConfig {
+    pub alias: String,
+    /// None lets OpenSSH load both its normal user and system configuration.
+    pub config_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -26,6 +36,8 @@ pub struct ServerProfile {
     pub username: String,
     pub port: u16,
     pub auth_method: AuthMethod,
+    #[serde(default)]
+    pub open_ssh: Option<OpenSshConfig>,
     #[serde(default)]
     pub identity_id: Option<String>,
     pub key_path: Option<String>,
@@ -58,6 +70,8 @@ pub struct ServerDraft {
     pub port: u32,
     #[serde(default)]
     pub auth_method: AuthMethod,
+    #[serde(default)]
+    pub open_ssh: Option<OpenSshConfig>,
     #[serde(default)]
     pub identity_id: Option<String>,
     pub key_path: Option<String>,

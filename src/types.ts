@@ -1,4 +1,4 @@
-export type AuthMethod = "password" | "privateKey" | "sshAgent";
+export type AuthMethod = "password" | "privateKey" | "sshAgent" | "openSsh";
 
 export interface ServerProfile {
   id: string;
@@ -7,6 +7,7 @@ export interface ServerProfile {
   username: string;
   port: number;
   authMethod: AuthMethod;
+  openSsh?: { alias: string; configPath?: string };
   identityId?: string;
   keyPath?: string;
   jumpHostId?: string;

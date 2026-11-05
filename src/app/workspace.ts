@@ -6,7 +6,7 @@ import { loadDashboard, loadDockerSection, loadFiles } from "./actions/remote";
 import { errorText, OperationCancelledError } from "./command-client";
 import { render } from "./render";
 import { cancelCurrentOperation, invokeCommand, setError } from "./session";
-import { activeCapabilities, activeTerminalTabByWorkspace, activeTerminalTabs, activeWorkspaceTab, connectedServerIds, isLocalWorkspace, LOCAL_SERVER_ID, LOCAL_WORKSPACE_ID, createLogViewer, dashboardSnapshots, PORT_PAGE_SIZE, PROCESS_PAGE_SIZE, root, serverTabViews, SERVICE_PAGE_SIZE, state } from "./state";
+import { activeServer, activeCapabilities, activeTerminalTabByWorkspace, activeTerminalTabs, activeWorkspaceTab, connectedServerIds, isLocalWorkspace, LOCAL_SERVER_ID, LOCAL_WORKSPACE_ID, createLogViewer, dashboardSnapshots, PORT_PAGE_SIZE, PROCESS_PAGE_SIZE, root, serverTabViews, SERVICE_PAGE_SIZE, state } from "./state";
 import { disposeTerminalSurfaces, openNewTerminal } from "./terminal";
 import type { View } from "./types";
 
@@ -202,6 +202,7 @@ export async function refreshSnapshot(loadView = true): Promise<void> {
 
 export async function setView(view: View): Promise<void> {
   if (!state.activeServerId) return;
+  if (activeServer()?.authMethod === "openSsh") view = "terminal";
   cancelCurrentOperation();
   state.navigationVersion += 1;
   if (state.activeView !== view) clearCommandResults();

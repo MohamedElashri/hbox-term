@@ -107,7 +107,9 @@ export async function unlockForCredentialError(error: unknown): Promise<void> {
 export const { cancelCurrentOperation, invokeCommand } = createCommandClient({
   getActiveOperation: () => state.activeOperation,
   setActiveOperation: (operation) => { state.activeOperation = operation; },
-  onRemoteOperationSuccess: (serverId) => { connectedServerIds.add(serverId); },
+  onRemoteOperationSuccess: (serverId) => {
+    if (state.snapshot.servers.find(server => server.id === serverId)?.authMethod !== "openSsh") connectedServerIds.add(serverId);
+  },
   render,
   unlockForCredentialError,
   requestHostKeyDecision,

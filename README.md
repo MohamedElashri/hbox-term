@@ -71,3 +71,10 @@ builds link to release downloads instead of replacing themselves.
 
 Open **Settings → About → About Ternway** for version/build details, project links, credits
 and license information. On macOS, **Ternway → About Ternway** opens the same page.
+
+### OpenSSH configuration
+
+Import aliases as **OpenSSH config** connections to keep routing, authentication and advanced
+rules linked to the source file. They open in Ternway's terminal using the system SSH client.
+Managed connections continue to provide graphical file and server tools.
+[Compatibility details](docs/OPENSSH.md).

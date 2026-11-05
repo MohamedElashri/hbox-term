@@ -26,3 +26,15 @@ test("unsupported routes cannot silently become direct connections", () => {
 test("explicit password preference wins over an available key", () => {
   assert.equal(importedDraft({ alias: "lab", authMethod: "password", keyPath: "/key" }, "ubuntu", "", "").authMethod, "password");
 });
+
+test("linked imports retain the source alias even when static settings cannot be represented", async () => {
+  const { linkedDraft } = await import("../src/app/ssh-import.ts");
+  const draft = linkedDraft({ alias: "internal", host: "preview.example", username: "preview", port: 239, keyPath: "/one-key", issues: ["ProxyJump and dynamic rules"] }, "/home/alice/custom config", " Work ");
+  assert.equal(draft.authMethod, "openSsh");
+  assert.equal(draft.host, "internal");
+  assert.equal(draft.username, "");
+  assert.deepEqual(draft.openSsh, { alias: "internal", configPath: "/home/alice/custom config" });
+  assert.equal(draft.groupName, "Work");
+  assert.equal(Object.hasOwn(draft, "password"), false);
+  assert.equal(Object.hasOwn(draft, "keyPath"), false);
+});
