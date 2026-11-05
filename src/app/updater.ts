@@ -7,6 +7,7 @@ import { escapeHtml, formatBytes } from "./format";
 import { root } from "./state";
 import { UpdateController } from "./updates";
 import { BRAND } from "./brand";
+import { saveSession } from "./session-save";
 
 export const RELEASES_URL = BRAND.releases;
 
@@ -37,7 +38,10 @@ async function loadMetadata(): Promise<void> {
   refreshSection();
 }
 
-export const updates = new UpdateController(() => check({ timeout: 20_000 }), relaunch, refreshSection, async () => {
+export const updates = new UpdateController(() => check({ timeout: 20_000 }), async () => {
+  await saveSession();
+  await relaunch();
+}, refreshSection, async () => {
   await loadMetadata();
   if (!metadata) throw new Error(metadataError);
   if (metadata.updateUnsupportedReason) throw new Error(metadata.updateUnsupportedReason);

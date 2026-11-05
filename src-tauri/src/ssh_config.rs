@@ -6,11 +6,21 @@ use std::{
 };
 
 fn words(line: &str) -> Vec<String> {
-    let mut result = Vec::new();
+    let line = line.trim_start();
+    let keyword_end = line
+        .find(|ch: char| ch.is_whitespace() || ch == '=' || ch == '#')
+        .unwrap_or(line.len());
+    if keyword_end == 0 {
+        return Vec::new();
+    }
+    let (keyword, values) = line.split_at(keyword_end);
+    let values = values.trim_start();
+    let values = values.strip_prefix('=').unwrap_or(values).trim_start();
+    let mut result = vec![keyword.to_owned()];
     let mut word = String::new();
     let mut quote = None;
     let mut escaped = false;
-    for ch in line.chars() {
+    for ch in values.chars() {
         if escaped {
             word.push(ch);
             escaped = false;
@@ -32,7 +42,7 @@ fn words(line: &str) -> Vec<String> {
                 quote = Some(ch);
                 continue;
             }
-            if ch.is_whitespace() || ch == '=' {
+            if ch.is_whitespace() {
                 if !word.is_empty() {
                     result.push(std::mem::take(&mut word));
                 }
@@ -194,6 +204,40 @@ pub fn read(path: &Path) -> Result<Vec<SshConfigEntry>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn equals_only_separates_the_keyword_from_its_value() {
+        for line in [
+            "IdentityFile /tmp/key=work",
+            "IdentityFile=/tmp/key=work",
+            "IdentityFile = /tmp/key=work",
+            "IdentityFile \"/tmp/key=work #1\" # comment",
+        ] {
+            let fields = words(line);
+            assert_eq!(fields[0], "IdentityFile");
+            assert_eq!(fields.len(), 2);
+            assert!(fields[1].starts_with("/tmp/key=work"));
+        }
+        assert!(words("  # comment").is_empty());
+    }
+
+    #[test]
+    fn imports_an_unquoted_key_path_containing_equals() {
+        let dir = std::env::temp_dir().join(format!("ssh-equals-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let key = dir.join("key=work");
+        fs::write(
+            dir.join("config"),
+            format!(
+                "Host qa\n HostName=127.0.0.1\n User = ubuntu\n IdentityFile {}\n",
+                key.display()
+            ),
+        )
+        .unwrap();
+        let entries = read(&dir.join("config")).unwrap();
+        assert_eq!(entries[0].key_path.as_deref(), key.to_str());
+        assert_eq!(entries[0].username.as_deref(), Some("ubuntu"));
+        fs::remove_dir_all(dir).unwrap();
+    }
     #[test]
     fn imports_includes_defaults_quotes_and_ignores_match() {
         let dir = std::env::temp_dir().join(format!("ssh-config-{}", uuid::Uuid::new_v4()));

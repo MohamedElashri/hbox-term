@@ -36,7 +36,7 @@ export function renderErrorView(error: string): string {
 }
 
 export function renderInlineErrorView(error: string): string {
-  return `<div class="inline-error">${icon("info")}<span>${escapeHtml(error)}</span><button data-action="dismiss-error">${icon("close")}</button></div>`;
+  return `<div class="inline-error" role="alert">${icon("info")}<span>${escapeHtml(error)}</span><button data-action="dismiss-error" aria-label="Dismiss error">${icon("close")}</button></div>`;
 }
 
 export function renderUnsupportedView(title: string, copy: string): string {

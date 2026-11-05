@@ -1739,12 +1739,28 @@ pub fn run() {
                         )?;
                         if cfg!(target_os = "macos") {
                             submenu.set_text("Ternway")?;
+                            // The default macOS Quit item terminates Cocoa directly, bypassing
+                            // the asynchronous window-close session save.
+                            submenu.remove_at(submenu.items()?.len() - 1)?;
+                            submenu.append(&tauri::menu::MenuItem::with_id(
+                                app,
+                                "quit-ternway",
+                                "Quit Ternway",
+                                true,
+                                Some("CmdOrCtrl+Q"),
+                            )?)?;
                         }
                     }
                 }
             }
             app.set_menu(menu)?;
             app.on_menu_event(|app, event| {
+                if event.id().as_ref() == "quit-ternway" {
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.close();
+                    }
+                    return;
+                }
                 let event_name = match event.id().as_ref() {
                     "about-ternway" => "show-about",
                     "check-updates" => "check-updates",
@@ -1880,6 +1896,21 @@ pub fn run() {
             open_config_file,
             close_terminal
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running ternway application");
+        .build(tauri::generate_context!())
+        .expect("error while building ternway application")
+        .run(|app, event| {
+            if let tauri::RunEvent::ExitRequested { code, api, .. } = event {
+                // Native Quit must await the same session save as closing the main window.
+                // Restarts use a distinct exit code and save from the updater before relaunch.
+                if matches!(code, None | Some(0)) {
+                    if let Some(window) = app.get_webview_window("main") {
+                        api.prevent_exit();
+                        if let Err(error) = window.close() {
+                            eprintln!("Could not close Ternway: {error}");
+                            app.exit(1);
+                        }
+                    }
+                }
+            }
+        });
 }

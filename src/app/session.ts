@@ -92,6 +92,10 @@ export const { cancelCurrentOperation, invokeCommand } = createCommandClient({
   unlockForCredentialError,
   requestHostKeyDecision,
   requestHostKeyTrust,
+  cancelRecovery: () => {
+    if (state.hostKeyWaiter) finishHostKeyPrompt(false);
+    if (state.masterPasswordWaiter) finishMasterPasswordPrompt(null);
+  },
 });
 
 export function setError(error: unknown): void {

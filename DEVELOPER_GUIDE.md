@@ -81,3 +81,19 @@ The normal suite uses OpenSSH `ssh-agent`, `ssh-add` and `ssh-keygen` with a
 disposable agent/key fixture. macOS includes these tools; on Linux install
 `openssh-client`. It does not use your current agent or contact a remote host.
 Real-host and password-manager tests remain explicit opt-in checks.
+
+## App regression checks
+
+Use Node.js 24.15 or newer in the 24.x line, or Node.js 26, for the frontend tests.
+`make test` includes DOM tests for dialog focus, form retention and custom selects, plus
+connection-save, SSH cancellation, updater and session-write tests. A command-contract test
+checks frontend IPC names against the registered Rust commands.
+
+Build an isolated macOS app with `make qa-macos`. Keep QA connections in its separate data
+directory; use loopback hosts and disposable import files for library and error-path checks.
+Check Tab/Shift-Tab/Escape in dialogs, Save versus Save & test, grouped import and search,
+terminal splits and renderer changes, and immediate quit/reopen with a renamed tab.
+
+Run `npm audit` when dependencies change. macOS and Linux CI run the frontend build and both
+test suites. Live password-manager authentication and remote administration need separate
+integration checks; passing fixture tests does not verify those external systems.

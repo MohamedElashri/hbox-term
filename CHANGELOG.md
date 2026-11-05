@@ -3,6 +3,9 @@
 ## Unreleased
 
 - Added a dedicated GitHub update dialog, with shortcuts in the app menu and About page.
+- Fixed dialog keyboard focus, connection-form input loss and Save connecting without being asked.
+- Fixed stale SSH approval retries and SSH key paths containing `=`.
+- Save sessions before quitting or restarting, including custom terminal tab names.
 
 ## 0.2.1 - 2026-11-05
 

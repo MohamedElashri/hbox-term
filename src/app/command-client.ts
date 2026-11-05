@@ -138,6 +138,7 @@ function recoveryFor(error: unknown, retryWithMasterPassword: boolean, retryWith
 }
 
 export interface CommandClientOptions {
+  invoke?: <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
   getActiveOperation: () => ActiveOperation | null;
   setActiveOperation: (operation: ActiveOperation | null) => void;
   onRemoteOperationSuccess: (serverId: string) => void;
@@ -145,16 +146,45 @@ export interface CommandClientOptions {
   unlockForCredentialError: (error: unknown) => Promise<void>;
   requestHostKeyDecision: (mismatch: HostKeyMismatch) => Promise<boolean>;
   requestHostKeyTrust: (unknown: HostKeyUnknown) => Promise<boolean>;
+  cancelRecovery?: () => void;
 }
 
 export function createCommandClient(options: CommandClientOptions) {
+  const invokeBackend = options.invoke ?? invoke;
+  let generation = 0;
+  let pendingRecovery: object | null = null;
   const cancelCurrentOperation = (expectedOperationId?: string): void => {
     const operation = options.getActiveOperation();
-    if (!operation || (expectedOperationId && operation.id !== expectedOperationId)) return;
+    if (expectedOperationId && operation?.id !== expectedOperationId) return;
+    generation++;
+    if (pendingRecovery) {
+      pendingRecovery = null;
+      options.cancelRecovery?.();
+    }
+    if (!operation) return;
     operation.cancelled = true;
     options.setActiveOperation(null);
-    void invoke("cancel_operation", { operationId: operation.id }).catch(() => undefined);
+    void invokeBackend("cancel_operation", { operationId: operation.id }).catch(() => undefined);
     options.render();
+  };
+
+  const ensureCurrent = (requestGeneration: number): void => {
+    if (generation !== requestGeneration) throw new OperationCancelledError();
+  };
+
+  const askRecovery = async <T>(request: () => Promise<T>, requestGeneration: number): Promise<T> => {
+    const token = {};
+    pendingRecovery = token;
+    try {
+      const answer = await request();
+      ensureCurrent(requestGeneration);
+      return answer;
+    } catch (error) {
+      ensureCurrent(requestGeneration);
+      throw error;
+    } finally {
+      if (pendingRecovery === token) pendingRecovery = null;
+    }
   };
 
   const recoverAndRetry = async <T>(
@@ -164,24 +194,28 @@ export function createCommandClient(options: CommandClientOptions) {
     retryWithMasterPassword: boolean,
     retryWithHostKey: boolean,
     beforeRetry: () => void,
+    requestGeneration: number,
   ): Promise<T> => {
+    ensureCurrent(requestGeneration);
     const recovery = recoveryFor(error, retryWithMasterPassword, retryWithHostKey);
     if (!recovery) throw error;
     beforeRetry();
     if (recovery.type === "credentials") {
-      await options.unlockForCredentialError(error);
+      await askRecovery(() => options.unlockForCredentialError(error), requestGeneration);
       return invokeCommand<T>(command, args, false, retryWithHostKey);
     }
     const serverId = operationServerId(args);
     if (!serverId) throw error;
     if (recovery.type === "mismatch") {
-      if (await options.requestHostKeyDecision(recovery.mismatch)) {
-        await invoke("replace_host_key", { serverId, expectedHost: recovery.mismatch.host, expectedPort: recovery.mismatch.port, expectedFingerprint: recovery.mismatch.newFingerprint });
+      if (await askRecovery(() => options.requestHostKeyDecision(recovery.mismatch), requestGeneration)) {
+        await invokeBackend("replace_host_key", { serverId, expectedHost: recovery.mismatch.host, expectedPort: recovery.mismatch.port, expectedFingerprint: recovery.mismatch.newFingerprint });
+        ensureCurrent(requestGeneration);
         return invokeCommand<T>(command, args, retryWithMasterPassword, false);
       }
     } else {
-      if (await options.requestHostKeyTrust(recovery.unknown)) {
-        await invoke("accept_host_key", { serverId, expectedHost: recovery.unknown.host, expectedPort: recovery.unknown.port, expectedFingerprint: recovery.unknown.fingerprint });
+      if (await askRecovery(() => options.requestHostKeyTrust(recovery.unknown), requestGeneration)) {
+        await invokeBackend("accept_host_key", { serverId, expectedHost: recovery.unknown.host, expectedPort: recovery.unknown.port, expectedFingerprint: recovery.unknown.fingerprint });
+        ensureCurrent(requestGeneration);
         return invokeCommand<T>(command, args, retryWithMasterPassword, false);
       }
     }
@@ -191,19 +225,21 @@ export function createCommandClient(options: CommandClientOptions) {
   const invokeCommand = async <T>(command: string, args?: Record<string, unknown>, retryWithMasterPassword = true, retryWithHostKey = true): Promise<T> => {
     const label = remoteOperationLabels[command];
     if (!label) {
+      const requestGeneration = generation;
       try {
-        return await invoke<T>(command, args);
+        return await invokeBackend<T>(command, args);
       } catch (error) {
-        return recoverAndRetry<T>(command, args, error, retryWithMasterPassword, retryWithHostKey, () => undefined);
+        return recoverAndRetry<T>(command, args, error, retryWithMasterPassword, retryWithHostKey, () => undefined, requestGeneration);
       }
     }
 
     cancelCurrentOperation();
+    const requestGeneration = generation;
     const operation: ActiveOperation = { id: crypto.randomUUID(), label, serverId: operationServerId(args), cancelled: false };
     options.setActiveOperation(operation);
     options.render();
     try {
-      const result = await invoke<T>(command, { ...(args ?? {}), operationId: operation.id });
+      const result = await invokeBackend<T>(command, { ...(args ?? {}), operationId: operation.id });
       if (operation.cancelled || options.getActiveOperation()?.id !== operation.id) throw new OperationCancelledError();
       if (operation.serverId) options.onRemoteOperationSuccess(operation.serverId);
       return result;
@@ -214,7 +250,7 @@ export function createCommandClient(options: CommandClientOptions) {
           options.setActiveOperation(null);
           options.render();
         }
-      });
+      }, requestGeneration);
     } finally {
       if (options.getActiveOperation()?.id === operation.id) {
         options.setActiveOperation(null);

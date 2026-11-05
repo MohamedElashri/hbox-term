@@ -5,6 +5,7 @@ import type { ServerProfile } from "../types";
 import { escapeHtml } from "./format";
 import { profileRouteLabel, renderAppDialog, renderModal } from "./modals";
 import { enhanceSelects } from "./select-controls";
+import { focusModal, restoreConnectionForm } from "./modal-state";
 import { activeCapabilities, activeDock, activeServer, activeServerIsConnected, activeTerminalGroup, activeTerminalGroups, connectedServerIds, dockShown, hasInteractiveSession, isLocalWorkspace, platform, quickMode, root, sidebarScrollPositions, state, viewScrollPositions } from "./state";
 import { renderEmptyWorkspaceView, renderErrorView, renderInlineErrorView, renderLoadingView, renderTitlebarView, renderWelcomeView } from "./static-views";
 import { groupTitle, mountTerminal } from "./terminal";
@@ -18,6 +19,8 @@ import { groupExited, paneCount, renderDashboard, renderTabStrip, renderFiles, r
 import { scrollCommandResultsIntoView, scrollContainerLogsIntoView, viewTransitionIsCurrent } from "./workspace";
 
 export function render(): void {
+  const previousFocus = document.activeElement;
+  const previousConnectionForm = root.querySelector<HTMLFormElement>('form[data-form="server"]');
   const settingsScroll = root.querySelector<HTMLElement>(".modal-settings")?.scrollTop;
   const previousContent = root.querySelector<HTMLElement>(".dock-main") ?? root.querySelector<HTMLElement>(".content-area");
   const previousServerList = root.querySelector<HTMLElement>(".server-list");
@@ -28,6 +31,7 @@ export function render(): void {
   const nextLocation = state.activeWorkspaceTabId ? `${state.activeWorkspaceTabId}:${state.activeView}` : "welcome";
   root.dataset.theme = state.darkMode ? "dark" : "light";
   root.innerHTML = quickMode ? renderQuickShell() : `${renderTitlebar()}${state.loading ? renderLoading() : renderShell()}`;
+  restoreConnectionForm(root, previousConnectionForm);
   const nextSettings = root.querySelector<HTMLElement>(".modal-settings");
   if (nextSettings && settingsScroll !== undefined) nextSettings.scrollTop = settingsScroll;
   const nextContent = root.querySelector<HTMLElement>(".dock-main") ?? root.querySelector<HTMLElement>(".content-area");
@@ -49,9 +53,7 @@ export function render(): void {
   enhanceSelects(root);
   state.renderedLocation = nextLocation;
   mountTerminal();
-  // `autofocus` applies only once per document, and the terminal (outside root) keeps focus otherwise.
-  const autofocus = root.querySelector<HTMLElement>(".modal [autofocus]");
-  if (autofocus && !autofocus.closest(".modal")!.contains(document.activeElement)) autofocus.focus();
+  focusModal(root, previousFocus);
 }
 
 function activeGroupTitle(): string | undefined {
@@ -83,7 +85,7 @@ export function renderShell(): string {
     <main class="main-area">
       ${renderTabBar()}
       ${isLocalWorkspace()
-        ? `<section class="content-area content-area-local">${renderTerminal()}</section>`
+        ? `<section class="content-area content-area-local">${state.errorMessage ? `<div class="local-error">${renderInlineError()}</div>` : ""}${renderTerminal()}</section>`
         : dockShown()
           ? `<section class="content-area content-area-docked">${renderDockLayout()}</section>`
           : `<section class="content-area">${state.activeServerId ? renderConnectedContent() : state.snapshot.servers.length ? renderEmptyWorkspace() : renderWelcome()}</section>`}
@@ -273,7 +275,7 @@ export function renderConnectPrompt(): string {
   const route = bastion
     ? ` The connection routes through ${escapeHtml(profileRouteLabel(bastion))}.`
     : "";
-  return `<div class="connect-prompt"><div class="connect-prompt-art">${icon("shield")}</div><div class="eyebrow">Connection is idle</div><h2>Ready when you are.</h2><p>Nothing has contacted ${escapeHtml(server.host)} yet. Ternway will read this connection's saved secret only when you choose to connect.${route}</p><button class="button button-primary" data-action="connect">${icon("play")} Connect to ${escapeHtml(server.name)}</button></div>`;
+  return `<div class="connect-prompt"><div class="connect-prompt-art">${icon("shield")}</div><div class="eyebrow">Connection is idle</div><h2>Ready when you are.</h2><p>Choose Connect to open an SSH session with ${escapeHtml(server.host)}. Ternway reads saved credentials only when connecting.${route}</p><button class="button button-primary" data-action="connect">${icon("play")} Connect to ${escapeHtml(server.name)}</button></div>`;
 }
 
 export function renderViewBody(): string {
