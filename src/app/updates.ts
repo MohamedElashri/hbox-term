@@ -36,11 +36,13 @@ export class UpdateController {
   private readonly check: () => Promise<UpdatePackage | null>;
   private readonly restart: () => Promise<void>;
   private readonly changed: () => void;
+  private readonly prepareInstall: () => Promise<void>;
 
-  constructor(check: () => Promise<UpdatePackage | null>, restart: () => Promise<void>, changed: () => void) {
+  constructor(check: () => Promise<UpdatePackage | null>, restart: () => Promise<void>, changed: () => void, prepareInstall: () => Promise<void> = async () => {}) {
     this.check = check;
     this.restart = restart;
     this.changed = changed;
+    this.prepareInstall = prepareInstall;
   }
 
   get busy(): boolean {
@@ -77,6 +79,7 @@ export class UpdateController {
     this.set({ phase: "downloading", downloaded: 0, total: undefined, error: undefined });
     let lastProgress = 0;
     try {
+      await this.prepareInstall();
       await update.download((event) => {
         if (event.event === "Started") this.set({ total: event.data.contentLength });
         else if (event.event === "Progress") {

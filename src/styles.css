@@ -592,9 +592,18 @@ h1 { margin-bottom: 0; font: 600 35px/1.05 var(--font-display); letter-spacing: 
 
 .update-section .settings-section-copy { flex: 1 1 280px; }
 .update-status { color: var(--ink) !important; font-weight: 600; }
-.update-notes { max-height: 160px; margin: 8px 0 0; padding: 10px 12px; overflow: auto; border: 1px solid var(--line); border-radius: 9px; color: var(--muted); background: var(--canvas); font: 10px/1.5 var(--font-display); white-space: pre-wrap; }
-.update-hint { max-width: 220px; margin: 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
+.update-notes { max-height: 240px; margin: 8px 0 0; padding: 14px; overflow: auto; border: 1px solid var(--line); border-radius: 9px; color: var(--ink); background: var(--canvas); font: 12px/1.7 var(--font-ui); white-space: pre-wrap; overflow-wrap: anywhere; }
+.update-hint { margin: 12px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
 .update-section .inline-error { margin-top: 10px; }
+.modal-updates { width: min(620px, 100%); position: relative; animation: none; }
+.update-section .update-version { color: var(--ink); font-weight: 600; }
+.update-section .update-status:empty { display: none; }
+.update-section .config-actions { flex-wrap: wrap; }
+.update-section .settings-section-copy > p { font-size: 12px; line-height: 1.6; }
+.update-section .update-release-notes h4 { margin: 18px 0 8px; color: var(--ink); font: 600 13px var(--font-ui); }
+.update-progress { display: block; width: 100%; height: 8px; margin: 14px 0; accent-color: var(--accent); }
+.update-restart-hint { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
+.about-footer { flex-wrap: wrap; }
 
 /* Connection library: stable navigation at desktop and compact widths. */
 .library-add { width: 100%; justify-content: center; }
