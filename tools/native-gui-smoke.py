@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import socket
+import signal
 import subprocess
 import sys
 import time
@@ -25,7 +26,7 @@ config = root / "config" / "ternway"
 config.mkdir()
 (config / "config").write_text("shell-integration = none\nwindow-save-state = always\nsave-scrollback = false\nclipboard-history = false\n")
 log = (artifacts / "driver.log").open("w")
-driver = subprocess.Popen(["tauri-driver", "--native-driver", "/usr/bin/WebKitWebDriver"], stdout=log, stderr=log)
+driver = subprocess.Popen(["tauri-driver", "--native-driver", "/usr/bin/WebKitWebDriver"], stdout=log, stderr=log, start_new_session=True)
 base = "http://127.0.0.1:4444"
 session = None
 checks = []
@@ -219,10 +220,16 @@ finally:
         except Exception as error:
             print(f"Cleanup observation: {error}", file=sys.stderr)
     trap.close()
-    driver.terminate()
+    try:
+        os.killpg(driver.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
     try:
         driver.wait(timeout=10)
     except subprocess.TimeoutExpired:
-        driver.kill()
+        try:
+            os.killpg(driver.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
         driver.wait()
     log.close()

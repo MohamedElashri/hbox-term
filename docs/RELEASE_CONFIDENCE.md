@@ -6,7 +6,8 @@ Every PR runs the macOS/Linux build and unit suites plus disposable password and
 OpenSSH fixtures. `make test-soak` repeats 12 real PTY/job-cleanup lifecycles, transferring
 73,728,000 output bytes with Unicode/full-screen controls and 1,212 resizes; increase
 `TERNWAY_SOAK_CYCLES` locally for a longer run. `Native Linux GUI` additionally runs a real WebKitGTK app on Ubuntu
-24.04 under X11/Xvfb and Wayland/Weston, with no X11 fallback in the Wayland job.
+24.04 under X11/Xvfb and Wayland/Weston, using the same compiled binary in separate
+isolated runs. The Wayland run has no X11 fallback.
 
 The native harness uses a separate `dev.elashri.ternway.ci` identifier and temporary
 XDG directories. It checks terminal UTF-8 process output, resize, settings/dark mode,

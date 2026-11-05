@@ -8,13 +8,9 @@ permissions:
   contents: read
 jobs:
   native-gui:
-    name: Native GUI (${{ matrix.display }})
+    name: Native GUI (X11 and Wayland)
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        display: [x11, wayland]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -36,41 +32,29 @@ jobs:
         run: npm run tauri -- build --debug --no-bundle --config '{"productName":"Ternway CI","identifier":"dev.elashri.ternway.ci","bundle":{"createUpdaterArtifacts":false}}'
       - name: Install pinned native WebDriver
         run: cargo install tauri-driver --version 2.1.0 --locked
-      - name: Exercise native WebKitGTK
+      # Reuse one compiled binary and dependency installation for both displays.
+      - name: Exercise native X11 WebKitGTK
         timeout-minutes: 8
         env:
-          DISPLAY_BACKEND: ${{ matrix.display }}
-          TERNWAY_GUI_ROOT: ${{ runner.temp }}/ternway-gui-${{ matrix.display }}
+          TERNWAY_GUI_ROOT: ${{ runner.temp }}/ternway-gui-x11
           LIBGL_ALWAYS_SOFTWARE: '1'
           WEBKIT_DISABLE_DMABUF_RENDERER: '1'
-        run: |
-          set -euo pipefail
-          if [[ "$DISPLAY_BACKEND" == x11 ]]; then
-            export GDK_BACKEND=x11
-            xvfb-run -a -s '-screen 0 1440x900x24' dbus-run-session -- python3 tools/native-gui-smoke.py src-tauri/target/debug/ternway
-          else
-            export XDG_RUNTIME_DIR="$RUNNER_TEMP/ternway-wayland-runtime"
-            mkdir -m 700 "$XDG_RUNTIME_DIR"
-            export WAYLAND_DISPLAY=wayland-ternway
-            export GDK_BACKEND=wayland
-            unset DISPLAY
-            weston --backend=headless-backend.so --renderer=pixman --socket="$WAYLAND_DISPLAY" --idle-time=0 --width=1440 --height=900 --no-config > "$RUNNER_TEMP/weston.log" 2>&1 &
-            compositor_pid=$!
-            trap 'kill "$compositor_pid" || true' EXIT
-            for attempt in $(seq 1 100); do
-              [[ -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ]] && break
-              sleep 0.1
-            done
-            test -S "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY"
-            dbus-run-session -- python3 tools/native-gui-smoke.py src-tauri/target/debug/ternway
-          fi
+        run: bash tools/run-native-gui.sh x11
+      - name: Exercise native Wayland WebKitGTK
+        timeout-minutes: 8
+        env:
+          TERNWAY_GUI_ROOT: ${{ runner.temp }}/ternway-gui-wayland
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          WEBKIT_DISABLE_DMABUF_RENDERER: '1'
+        run: bash tools/run-native-gui.sh wayland
       - name: Upload native QA evidence
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: native-gui-${{ matrix.display }}
+          name: native-gui-x11-and-wayland
           path: |
-            ${{ runner.temp }}/ternway-gui-${{ matrix.display }}/artifacts
+            ${{ runner.temp }}/ternway-gui-x11/artifacts
+            ${{ runner.temp }}/ternway-gui-wayland/artifacts
             ${{ runner.temp }}/weston.log
           if-no-files-found: ignore
           retention-days: 7
