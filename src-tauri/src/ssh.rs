@@ -633,7 +633,7 @@ fn authenticate(session: &Session, profile: &ServerProfile, store: &Store) -> Re
                 .map_err(|e| format!("Could not read agent keys: {e}"))?;
             if keys.is_empty() {
                 return Err(
-                    "The SSH agent has no available keys. Unlock it and add an SSH key".into(),
+                    "The SSH agent has no available keys. Load an SSH key into your agent".into(),
                 );
             }
             let mut authenticated = false;
@@ -1848,6 +1848,19 @@ mod live_onepassword_tests {
     #[test]
     #[ignore = "Requires explicit host authorization and 1Password approval"]
     fn live_onepassword_login_and_read_only_command() {
+        let socket = crate::identities::find_onepassword_agent().expect("Find 1Password agent");
+        live_agent_check(socket);
+    }
+
+    #[test]
+    #[ignore = "Requires explicit host authorization and SSH-agent signing approval"]
+    fn live_agent_login_and_read_only_command() {
+        let socket = std::env::var("HBOX_TEST_SSH_AGENT_SOCKET")
+            .unwrap_or_else(|_| crate::identities::SYSTEM_AGENT_REFERENCE.into());
+        live_agent_check(socket);
+    }
+
+    fn live_agent_check(socket: String) {
         use crate::identities::{Identity, IdentityProvider};
         let host = std::env::var("HBOX_TEST_SSH_HOST")
             .expect("Set HBOX_TEST_SSH_HOST to an authorized test host");
@@ -1856,7 +1869,6 @@ mod live_onepassword_tests {
             .unwrap_or_else(|_| "22".into())
             .parse()
             .unwrap();
-        let socket = crate::identities::find_onepassword_agent().expect("Find 1Password agent");
         let directory =
             std::env::temp_dir().join(format!("hbox-live-ssh-{}", uuid::Uuid::new_v4()));
         let result = (|| -> Result<(), String> {
@@ -1899,7 +1911,7 @@ mod live_onepassword_tests {
             Ok(())
         })();
         let _ = std::fs::remove_dir_all(directory);
-        result.expect("1Password authentication and read-only command succeed");
-        println!("Production SSH client: trusted host key, 1Password authentication, read-only command, and disconnect succeeded");
+        result.expect("SSH-agent authentication and read-only command succeed");
+        println!("Production SSH client: trusted host key, SSH-agent authentication, read-only command, and disconnect succeeded");
     }
 }

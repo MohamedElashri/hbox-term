@@ -104,3 +104,26 @@ The generated board is concept artwork; app icons and final Manrope lettering ar
 editable vectors. The font's OFL notice is included. Browser preview access was
 unavailable, and Safari access was rejected by automatic review; visual
 verification was completed using the app's own isolated QA bundle instead.
+
+## Provider-neutral SSH-agent endpoints
+
+Signing already used libssh2's standard SSH-agent protocol client. The system
+agent is now a first-class endpoint, saved as env:SSH_AUTH_SOCK and resolved at
+connect time without mutating the process environment. Endpoint validation
+allows saving this selector even if the current GUI process has no agent
+environment. Absolute and ~/ socket paths retain their behavior.
+
+The identity UI defaults to the system endpoint; provider-specific shortcuts
+only fill an explicit socket path. Generic errors refer to the SSH agent rather
+than assuming a password manager. The generic opt-in live login test accepts
+HBOX_TEST_SSH_AGENT_SOCKET or uses SSH_AUTH_SOCK. Existing 1Password regressions
+remain as provider-specific checks of the same client.
+
+The normal suite uses a disposable local OpenSSH agent and generated key:
+production-client enumeration is checked before/after loading the key, followed
+by an OpenSSH sign/verify challenge. This is independent of the user's agent,
+keys, password managers and remote hosts. Fixtures stop the child agent and
+remove key material even when assertions fail. Resolution and storage tests
+cover dynamic sockets, unavailable/invalid environment values, explicit-path
+precedence, selector persistence and no vault creation. This change does not
+establish that the previously observed native 1Password approval stall is fixed.

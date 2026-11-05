@@ -128,7 +128,7 @@ impl Store {
         if identity.provider != crate::identities::IdentityProvider::SshAgent {
             return Err("Only SSH agent identities are supported yet".into());
         }
-        crate::identities::agent_socket(&identity.reference)?;
+        crate::identities::validate_agent_reference(&identity.reference)?;
         let db = self.connection.lock().map_err(|e| e.to_string())?;
         if crate::identities::list(&db)?
             .iter()
@@ -702,6 +702,24 @@ mod identity_migration_tests {
             .set_connection_group(&[profile.id.clone()], "")
             .unwrap();
         assert!(store.get_server(&profile.id).unwrap().group_name.is_none());
+        assert!(!dir.join("vault").exists());
+        drop(store);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn system_agent_identity_persists_a_selector_without_resolving_the_environment() {
+        let dir = std::env::temp_dir().join(format!("tw-system-agent-{}", Uuid::new_v4()));
+        let store = Store::open(&dir.join("state.sqlite"), &dir.join("vault")).unwrap();
+        let identity = crate::identities::Identity {
+            id: "system".into(),
+            name: "System SSH agent".into(),
+            username: "alice".into(),
+            provider: crate::identities::IdentityProvider::SshAgent,
+            reference: crate::identities::SYSTEM_AGENT_REFERENCE.into(),
+        };
+        store.create_identity(&identity).unwrap();
+        assert_eq!(store.resolve_identity("system").unwrap(), identity);
         assert!(!dir.join("vault").exists());
         drop(store);
         std::fs::remove_dir_all(dir).unwrap();

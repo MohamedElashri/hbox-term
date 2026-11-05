@@ -181,3 +181,29 @@ Open Settings → About Ternway to view the version, platform, credits and licen
 or copy build details when reporting an issue. Copied details contain only the
 version, OS/architecture, build type and source commit. Existing hbox-term data
 and configuration paths remain compatible after the display-name change.
+
+## SSH agents
+
+In Settings → SSH identities, the default endpoint is `env:SSH_AUTH_SOCK`.
+Ternway resolves it from the application's environment each time it connects.
+Use an absolute socket path (or `~/…`) when selecting a different agent or when
+a desktop launch does not inherit SSH_AUTH_SOCK. The UI explains when the
+environment variable is unavailable.
+
+All endpoints use the same standard SSH-agent client for key enumeration and
+authentication signing. OpenSSH and compatible password-manager agents share
+this path. The agent controls access to its keys and any signing approval.
+The optional 1Password shortcut only finds a socket; it does not select a
+different signing implementation.
+
+For an explicitly authorized live check against your own test host, run:
+
+```sh
+HBOX_TEST_SSH_HOST=your-test-host HBOX_TEST_SSH_USER=your-test-user HBOX_TEST_SSH_AGENT_SOCKET=/absolute/path/to/agent.sock cargo test --manifest-path src-tauri/Cargo.toml --lib live_agent_login_and_read_only_command -- --ignored
+```
+
+HBOX_TEST_SSH_PORT is optional (default 22). If the agent socket override is
+omitted, the test uses SSH_AUTH_SOCK. The check enforces known_hosts, runs a fixed
+read-only printf command, disconnects and removes its temporary profile store.
+A separate opt-in 1Password regression remains available. Protocol support does
+not guarantee support for every provider policy, key type or agent extension.

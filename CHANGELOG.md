@@ -22,7 +22,9 @@ Preview release of Ternway (formerly hbox-term), with a redesigned connection li
 
 ### SSH identities and storage
 
-- Reusable SSH-agent identities with standard Unix socket configuration for macOS and Linux.
+- Reusable SSH-agent identities using the standard protocol on macOS and Linux, with a system SSH_AUTH_SOCK selector or explicit socket path.
+- Provider-neutral connection/signing flow; password-manager shortcuts only discover sockets.
+- Isolated OpenSSH-agent regression for key enumeration and sign/verify, plus a generic opt-in live SSH test.
 - 1Password socket discovery and an agent key-availability check.
 - SQLite identity migration with a pre-migration backup, transactional connection bindings, and referenced-identity protection.
 - Agent-only authentication without copying private keys or requiring a local credential vault.
@@ -31,7 +33,7 @@ Preview release of Ternway (formerly hbox-term), with a redesigned connection li
 
 ### Validation
 
-- 69 frontend tests and 39 Rust tests passed on macOS; two live-only tests are excluded from the normal suite.
+- 69 frontend tests and 42 Rust tests passed on macOS; three live-only tests are excluded from the normal suite.
 - Authorized read-only SSH authentication through 1Password passed using the production client in the test executable.
 - Native macOS QA verified import, group rename/collapse, connection saving, local terminal output, and distinct icons.
 - Added a macOS/Linux CI matrix and an isolated, ad-hoc-signed macOS QA build target.

@@ -329,6 +329,7 @@ export async function runAction(action: string, target: HTMLElement = document.c
     case "cancel-operation": cancelCurrentOperation(); break;
     case "cancel-transfer": cancelTransfer(); break;
     case "disconnect": await disconnectActiveServer(); break;
+    case "use-system-ssh-agent":
     case "find-onepassword-agent":
     case "check-ssh-agent": {
       const form = target.closest<HTMLFormElement>('form[data-form="identity"]');
@@ -339,9 +340,10 @@ export async function runAction(action: string, target: HTMLElement = document.c
       button.disabled = true;
       status.textContent = "Checking agent…";
       try {
+        if (target.dataset.action === "use-system-ssh-agent") input.value = "env:SSH_AUTH_SOCK";
         if (target.dataset.action === "find-onepassword-agent") input.value = await invoke<string>("find_onepassword_agent");
         const count = await invoke<number>("check_ssh_agent", { reference: input.value.trim() });
-        if (status.isConnected) status.textContent = count ? `Agent reachable: ${count} public key${count === 1 ? "" : "s"} available. Signing approval is checked when you connect.` : "Agent reachable, but no keys are available. Unlock your password manager and check its SSH keys.";
+        if (status.isConnected) status.textContent = count ? `Agent reachable: ${count} public key${count === 1 ? "" : "s"} available. Signing approval is checked when you connect.` : "Agent reachable, but no keys are available. Load an SSH key into your agent and check again.";
       } catch (error) { if (status.isConnected) status.textContent = errorText(error); }
       finally { button.disabled = false; }
       break;

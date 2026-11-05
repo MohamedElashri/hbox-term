@@ -254,7 +254,17 @@ mod tests {
     }
 }
 
-pub fn agent_socket(reference: &str) -> Result<std::path::PathBuf, String> {
+/// Persist the selector, not a session-specific socket path. Resolve at connect time.
+pub const SYSTEM_AGENT_REFERENCE: &str = "env:SSH_AUTH_SOCK";
+
+pub fn validate_agent_reference(reference: &str) -> Result<(), String> {
+    if reference == SYSTEM_AGENT_REFERENCE {
+        return Ok(());
+    }
+    explicit_agent_socket(reference).map(|_| ())
+}
+
+fn explicit_agent_socket(reference: &str) -> Result<std::path::PathBuf, String> {
     if reference.contains('\0') {
         return Err("Agent socket path contains an invalid character".into());
     }
@@ -266,9 +276,32 @@ pub fn agent_socket(reference: &str) -> Result<std::path::PathBuf, String> {
         std::path::PathBuf::from(reference)
     };
     if !path.is_absolute() {
-        return Err("Enter an absolute SSH agent socket path (or a path starting with ~/)".into());
+        return Err("Use env:SSH_AUTH_SOCK for the system agent, or enter an absolute socket path (~/ is supported)".into());
     }
     Ok(path)
+}
+
+fn resolve_agent_socket(
+    reference: &str,
+    system_socket: Option<&std::ffi::OsStr>,
+) -> Result<std::path::PathBuf, String> {
+    if reference != SYSTEM_AGENT_REFERENCE {
+        return explicit_agent_socket(reference);
+    }
+    let socket = system_socket.filter(|s| !s.is_empty()).ok_or(
+        "SSH_AUTH_SOCK is not available to this app. Launch it with your agent environment, or choose an explicit socket path."
+    )?;
+    let path = std::path::PathBuf::from(socket);
+    if !path.is_absolute() || socket.as_encoded_bytes().contains(&0) {
+        return Err(
+            "SSH_AUTH_SOCK must contain an absolute socket path without NUL characters".into(),
+        );
+    }
+    Ok(path)
+}
+
+pub fn agent_socket(reference: &str) -> Result<std::path::PathBuf, String> {
+    resolve_agent_socket(reference, std::env::var_os("SSH_AUTH_SOCK").as_deref())
 }
 
 #[cfg(test)]
@@ -287,6 +320,111 @@ mod agent_tests {
         }
         assert!(agent_socket("~/.ssh/agent.sock").unwrap().is_absolute());
     }
+    #[test]
+    fn system_agent_selector_resolves_without_baking_in_session_paths() {
+        use std::ffi::OsStr;
+        assert!(validate_agent_reference(SYSTEM_AGENT_REFERENCE).is_ok());
+        for socket in ["/tmp/agent-one.sock", "/run/user/1000/agent-two.sock"] {
+            assert_eq!(
+                resolve_agent_socket(SYSTEM_AGENT_REFERENCE, Some(OsStr::new(socket))).unwrap(),
+                std::path::PathBuf::from(socket)
+            );
+        }
+        assert!(resolve_agent_socket(SYSTEM_AGENT_REFERENCE, None)
+            .unwrap_err()
+            .contains("not available"));
+        for socket in ["", "relative/socket", "/tmp/bad\0socket"] {
+            assert!(
+                resolve_agent_socket(SYSTEM_AGENT_REFERENCE, Some(OsStr::new(socket))).is_err()
+            );
+        }
+        assert_eq!(
+            resolve_agent_socket("/tmp/custom.sock", Some(OsStr::new("invalid"))).unwrap(),
+            std::path::PathBuf::from("/tmp/custom.sock")
+        );
+        assert!(validate_agent_reference("env:OTHER_VARIABLE").is_err());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn openssh_agent_lists_keys_and_signs_in_an_isolated_fixture() {
+        use std::process::{Child, Command, Stdio};
+        use std::time::{Duration, Instant};
+        struct Fixture {
+            process: Child,
+            directory: std::path::PathBuf,
+        }
+        impl Drop for Fixture {
+            fn drop(&mut self) {
+                let _ = self.process.kill();
+                let _ = self.process.wait();
+                let _ = std::fs::remove_dir_all(&self.directory);
+            }
+        }
+        let directory =
+            std::path::PathBuf::from("/tmp").join(format!("tw-agent-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let socket = directory.join("agent.sock");
+        let process = Command::new("ssh-agent")
+            .args(["-D", "-a"])
+            .arg(&socket)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("OpenSSH ssh-agent is required");
+        let fixture = Fixture { process, directory };
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            match probe_agent(socket.to_str().unwrap()) {
+                Ok(count) => {
+                    assert_eq!(count, 0);
+                    break;
+                }
+                Err(error) => {
+                    assert!(
+                        Instant::now() < deadline,
+                        "fixture agent did not start: {error}"
+                    );
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+            }
+        }
+        let key = fixture.directory.join("test-key");
+        let generated = Command::new("ssh-keygen")
+            .args(["-q", "-t", "ed25519", "-N", "", "-f"])
+            .arg(&key)
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        assert!(
+            generated.status.success(),
+            "generate disposable fixture key"
+        );
+        let added = Command::new("ssh-add")
+            .arg(&key)
+            .env("SSH_AUTH_SOCK", &socket)
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        assert!(added.status.success(), "load key into disposable agent");
+        assert_eq!(probe_agent(socket.to_str().unwrap()).unwrap(), 1);
+        // OpenSSH verifies an actual sign request against the public key. This
+        // checks the fixture's signing capability; the production helper above
+        // verifies key enumeration through our libssh2 protocol client.
+        let signed = Command::new("ssh-add")
+            .arg("-T")
+            .arg(key.with_extension("pub"))
+            .env("SSH_AUTH_SOCK", &socket)
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        assert!(
+            signed.status.success(),
+            "standard agent sign/verify challenge"
+        );
+    }
+
     #[test]
     fn unavailable_agent_fails_without_changing_process_environment() {
         let before = std::env::var_os("SSH_AUTH_SOCK");
@@ -308,10 +446,15 @@ pub fn connect_agent(session: &ssh2::Session, reference: &str) -> Result<ssh2::A
     agent
         .set_identity_path(&socket)
         .map_err(|e| format!("Invalid SSH agent socket: {e}"))?;
-    agent.connect().map_err(|e| format!("Could not reach SSH agent at {}. Start or unlock your password manager and check its agent socket: {e}", socket.display()))?;
+    agent.connect().map_err(|e| {
+        format!(
+            "Could not reach SSH agent at {}. Start your SSH agent and check its socket: {e}",
+            socket.display()
+        )
+    })?;
     agent
         .list_identities()
-        .map_err(|e| format!("Could not list agent keys. Unlock your password manager: {e}"))?;
+        .map_err(|e| format!("Could not list agent keys. Check that the agent is ready: {e}"))?;
     Ok(agent)
 }
 
