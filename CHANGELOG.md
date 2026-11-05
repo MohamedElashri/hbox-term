@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.1 - 2026-11-05
+
+- Organized Settings into sections, with About last.
+- Fixed SSH import readability in dark mode and dialog rendering on macOS.
+
 ## 0.2.0 - 2026-11-05
 
 - Added Ternway branding and an About page.

@@ -25,7 +25,7 @@ curl -fsSL https://raw.githubusercontent.com/MohamedElashri/ternway/main/install
 ```
 
 The script picks the right package (`.deb`, `.rpm` or AppImage on Linux, the `.dmg` for your Mac's
-architecture), verifies it against `SHA256SUMS.txt` and installs it. Set `TERNWAY_VERSION=v0.2.0`
+architecture), verifies it against `SHA256SUMS.txt` and installs it. Set `TERNWAY_VERSION=v0.2.1`
 to pin a release.
 
 **Manual download:** get the package for your platform from the
