@@ -1,6 +1,6 @@
 [package]
 name = "hbox-term"
-version = "0.2.0-beta.1"
+version = "0.2.0"
 description = "hbox-term: a fast local and remote terminal workspace with agentless Linux server management over SSH."
 authors = ["Mohamed Elashri <git@elashri.com>"]
 license = "MIT"
