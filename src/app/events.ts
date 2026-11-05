@@ -1,3 +1,5 @@
+import { loadAboutMetadata, aboutBuildSummary } from "./about";
+import { BRAND } from "./brand";
 import { importedDraft } from "./ssh-import";
 import type { SshConfigEntry } from "../types";
 import { escapeHtml } from "./format";
@@ -303,6 +305,16 @@ export async function runAction(action: string, target: HTMLElement = document.c
       break;
     }
     case "add-server": state.editingServer = null; state.modal = "server"; state.errorMessage = ""; render(); break;
+    case "show-about":
+      state.modal = "about"; render();
+      try { await loadAboutMetadata(); if (state.modal === "about") render(); } catch (error) { setError(error); }
+      break;
+    case "copy-build-info": await copyText(aboutBuildSummary()); break;
+    case "open-project-link": {
+      const key = target.dataset.projectLink;
+      if (key === "source" || key === "issues" || key === "releases" || key === "license") await openUrl(BRAND[key]).catch(setError);
+      break;
+    }
     case "credential-settings": state.credentialSettingsError = ""; state.credentialSettingsNotice = ""; state.modal = "security"; render(); break;
     case "change-master-password": state.credentialSettingsError = ""; state.credentialSettingsNotice = ""; state.modal = "change-password"; render(); break;
     case "reset-credentials": state.credentialSettingsError = ""; state.credentialSettingsNotice = ""; state.modal = "reset-credentials"; render(); break;
@@ -371,7 +383,7 @@ export async function runAction(action: string, target: HTMLElement = document.c
       break;
     case "install-update": await updates.install(); break;
     case "restart-update":
-      if (await confirm("Restarting ends the programs running in your terminals.", { title: "Restart hbox-term?" })) await updates.restartNow();
+      if (await confirm("Restarting ends the programs running in your terminals.", { title: "Restart Ternway?" })) await updates.restartNow();
       break;
     case "open-releases": await openUrl(RELEASES_URL).catch(setError); break;
     case "reload-config": await loadTerminalConfig(true); render(); break;
@@ -398,7 +410,7 @@ export async function runAction(action: string, target: HTMLElement = document.c
     case "add-authorized-key": await addAuthorizedKey(); break;
     case "new-command": state.editingCommand = null; state.modal = "command"; render(); break;
     case "new-tunnel": state.editingTunnel = null; state.modal = "tunnel"; render(); break;
-    case "show-help": await message("The Local tab is a shell on this machine. Add a server with a password or private key to open SSH terminals next to it and manage the server from the sidebar: overview, files over SFTP, services, containers, logs, and network sockets. Nothing is installed on your servers.", { title: "How hbox-term works" }); break;
+    case "show-help": await message("The Local tab is a shell on this machine. Add a server with a password or private key to open SSH terminals next to it and manage the server from the sidebar: overview, files over SFTP, services, containers, logs, and network sockets. Nothing is installed on your servers.", { title: "How Ternway works" }); break;
   }
 }
 

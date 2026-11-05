@@ -29,7 +29,8 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tauri::{
-    AppHandle, Manager, PhysicalPosition, PhysicalRect, PhysicalSize, Runtime, State, WebviewWindow,
+    AppHandle, Emitter, Manager, PhysicalPosition, PhysicalRect, PhysicalSize, Runtime, State,
+    WebviewWindow,
 };
 use terminal::TerminalSessions;
 use zeroize::Zeroizing;
@@ -1426,6 +1427,10 @@ fn finish_remote_edit(
 #[serde(rename_all = "camelCase")]
 struct AppMetadata {
     version: String,
+    os: &'static str,
+    arch: &'static str,
+    commit: &'static str,
+    debug: bool,
     /// Empty when the built-in updater can replace this installation.
     update_unsupported_reason: &'static str,
 }
@@ -1443,6 +1448,10 @@ fn app_metadata(app: AppHandle) -> AppMetadata {
     };
     AppMetadata {
         version: app.package_info().version.to_string(),
+        os: std::env::consts::OS,
+        arch: std::env::consts::ARCH,
+        commit: option_env!("TERNWAY_BUILD_COMMIT").unwrap_or(""),
+        debug: cfg!(debug_assertions),
         update_unsupported_reason: reason,
     }
 }
@@ -1701,6 +1710,39 @@ pub fn run() {
         .manage(config::ConfigWatcher::default())
         .manage(remote_edit::RemoteEdits::default())
         .setup(|app| {
+            let menu = tauri::menu::Menu::default(app.handle())?;
+            for (index, item) in menu.items()?.into_iter().enumerate() {
+                if let tauri::menu::MenuItemKind::Submenu(submenu) = item {
+                    let is_about_menu = if cfg!(target_os = "macos") {
+                        index == 0
+                    } else {
+                        submenu.text()? == "Help"
+                    };
+                    if is_about_menu {
+                        submenu.remove_at(0)?;
+                        submenu.prepend(&tauri::menu::MenuItem::with_id(
+                            app,
+                            "about-ternway",
+                            "About Ternway",
+                            true,
+                            None::<&str>,
+                        )?)?;
+                        if cfg!(target_os = "macos") {
+                            submenu.set_text("Ternway")?;
+                        }
+                    }
+                }
+            }
+            app.set_menu(menu)?;
+            app.on_menu_event(|app, event| {
+                if event.id().as_ref() == "about-ternway" {
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                        let _ = window.emit("show-about", ());
+                    }
+                }
+            });
             let data_dir = app.path().app_local_data_dir()?;
             if let Err(error) = local_pty::install_shell_integration(&data_dir) {
                 eprintln!("hbox-term shell integration unavailable: {error}");

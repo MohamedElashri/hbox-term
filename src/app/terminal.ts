@@ -802,7 +802,7 @@ function rememberClipboard(text: string): void {
 }
 
 function showPasteHistory(surface: TerminalSurface): void {
-  if (!clipboardHistory.length) { showToast("Nothing copied or pasted in hbox-term yet.", "info"); return; }
+  if (!clipboardHistory.length) { showToast("Nothing copied or pasted in Ternway yet.", "info"); return; }
   openPicker("Paste from history…", clipboardHistory.map((text): PaletteItem => {
     const lines = text.split("\n");
     return {

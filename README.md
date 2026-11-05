@@ -1,4 +1,8 @@
-# hbox-term
+# Ternway
+
+**Your machines. One workspace.** Previously hbox-term.
+
+![Ternway](docs/branding/ternway/release-banner.svg)
 
 [![Release](https://img.shields.io/github/v/release/MohamedElashri/hbox-term?include_prereleases&sort=semver)](https://github.com/MohamedElashri/hbox-term/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -36,9 +40,9 @@ to pin a release.
 | Linux x86_64 / ARM64 | `.deb`, `.rpm` or `.AppImage` |
 
 > [!NOTE]
-> **macOS:** the app is not notarized, so macOS blocks a downloaded copy ("hbox-term is damaged"
+> **macOS:** the app is not notarized, so macOS blocks a downloaded copy ("Ternway is damaged"
 > or "cannot be opened"). After moving it to Applications, allow it with
-> `xattr -dr com.apple.quarantine /Applications/hbox-term.app`. The install script does this for you.
+> `xattr -dr com.apple.quarantine /Applications/Ternway.app`. The install script does this for you.
 
 ## Development
 
@@ -57,3 +61,14 @@ See the [developer guide](DEVELOPER_GUIDE.md) for dependencies, architecture and
 
 [MIT](LICENSE). Bundles JetBrains Mono under the
 [SIL Open Font License](licenses/JetBrainsMono-OFL.txt).
+
+## Name change in 0.2
+
+Ternway is the new display name. Existing installations keep the same application
+identifier, profile database, credential vault, configuration directory
+(`~/.config/hbox-term`), shell integration environment variables, and updater
+trust key. The executable/package identifier remains `hbox-term` for compatibility.
+The repository and update feed stay at their current GitHub addresses.
+
+Open **Settings → About Ternway** for version/build details, project links, credits
+and license information. On macOS, **Ternway → About Ternway** opens the same page.

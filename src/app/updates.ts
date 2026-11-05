@@ -101,7 +101,7 @@ export class UpdateController {
     try {
       await this.restart();
     } catch (error) {
-      this.set({ phase: "installed", error: `Could not restart hbox-term. Quit and reopen it to finish updating. ${String(error)}` });
+      this.set({ phase: "installed", error: `Could not restart Ternway. Quit and reopen it to finish updating. ${String(error)}` });
     }
   }
 }

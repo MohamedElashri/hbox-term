@@ -631,3 +631,17 @@ h1 { margin-bottom: 0; font: 600 35px/1.05 var(--font-display); letter-spacing: 
 .server-group-label { font-size: 10px; }
 .group-edit { width: 24px; height: 24px; opacity: .6; }
 .group-edit:hover, .group-edit:focus-visible { opacity: 1; }
+
+.modal-about { width: min(660px, calc(100vw - 32px)); }
+.about-content { color: var(--ink); padding: 32px; font-family: var(--font-ui, system-ui, sans-serif); }
+.about-brand { display: flex; align-items: center; gap: 24px; margin-bottom: 26px; }
+.about-brand img { flex: 0 0 auto; }
+.about-brand h3 { margin: 0 0 8px; font-size: 40px; line-height: 1.1; letter-spacing: -1.5px; font-weight: 650; }
+.about-brand p, .about-description { color: var(--muted); line-height: 1.7; margin: 0; }
+.about-content h4 { font-size: 21px; font-weight: 550; letter-spacing: -.5px; margin: 0 0 12px; }
+.about-details { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; padding: 24px 0; margin: 24px 0 16px; border-block: 1px solid var(--line); }
+.about-details dt { color: var(--muted); font-size: 12px; }
+.about-details dd { margin: 6px 0 0; font-size: 14px; }
+.about-links { display: flex; flex-wrap: wrap; gap: 8px; }
+.about-footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 22px 0; color: var(--muted); font-size: 12px; }
+@media(max-width:540px) { .about-content { padding: 22px; }.about-brand { gap: 16px; }.about-brand img { width: 76px; height: 76px; }.about-brand h3 { font-size: 33px; }.about-details { grid-template-columns: 1fr; } }

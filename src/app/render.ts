@@ -141,7 +141,7 @@ export function renderServerRail(): string {
   const query = state.serverQuery.trim().toLowerCase();
   return `<aside class="server-rail" aria-label="Connections">
     <div class="server-rail-flyout">
-      <div class="rail-brand"><span class="brand-mark">${icon("logo")}</span><span class="rail-brand-name">hbox-term</span></div>
+      <div class="rail-brand"><span class="brand-mark">${icon("logo")}</span><span class="rail-brand-name">Ternway</span></div>
       <div class="sidebar-section server-section">
         <div class="section-label-row"><span class="section-label">Connections</span></div>
         <label class="sidebar-search"><span>${icon("search")}</span><input data-field="server-search" value="${escapeHtml(state.serverQuery)}" placeholder="Search connections…" aria-label="Search connections and notes"/><kbd>${platform === "macos" ? "⌘" : "Ctrl"} K</kbd></label>
@@ -247,7 +247,7 @@ export function renderConnectedContent(): string {
     accounts: ["Users & groups", "Linux identities, access, and membership."],
     administration: ["Administration", "Firewall, SSH access, security posture, and maintenance."],
     commands: ["Saved commands", "Reusable commands for this server or your whole workspace."],
-    tunnels: ["SSH tunnels", "Local, remote, and SOCKS5 forwarding managed by hbox-term."],
+    tunnels: ["SSH tunnels", "Local, remote, and SOCKS5 forwarding managed by Ternway."],
   };
   const [title, subtitle] = titles[state.activeView];
   const snapshotNotice = state.activeView === "dashboard"
@@ -270,7 +270,7 @@ export function renderConnectPrompt(): string {
   const route = bastion
     ? ` The connection routes through ${escapeHtml(profileRouteLabel(bastion))}.`
     : "";
-  return `<div class="connect-prompt"><div class="connect-prompt-art">${icon("shield")}</div><div class="eyebrow">Connection is idle</div><h2>Ready when you are.</h2><p>Nothing has contacted ${escapeHtml(server.host)} yet. hbox-term will read this connection's saved secret only when you choose to connect.${route}</p><button class="button button-primary" data-action="connect">${icon("play")} Connect to ${escapeHtml(server.name)}</button></div>`;
+  return `<div class="connect-prompt"><div class="connect-prompt-art">${icon("shield")}</div><div class="eyebrow">Connection is idle</div><h2>Ready when you are.</h2><p>Nothing has contacted ${escapeHtml(server.host)} yet. Ternway will read this connection's saved secret only when you choose to connect.${route}</p><button class="button button-primary" data-action="connect">${icon("play")} Connect to ${escapeHtml(server.name)}</button></div>`;
 }
 
 export function renderViewBody(): string {

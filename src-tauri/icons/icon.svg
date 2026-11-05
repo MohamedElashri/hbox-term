@@ -1,12 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 128 128">
-  <defs>
-    <linearGradient id="background" x1="0" y1="0" x2="128" y2="128" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#343746"/>
-      <stop offset="1" stop-color="#1e1f29"/>
-    </linearGradient>
-  </defs>
-  <rect width="128" height="128" rx="28" fill="url(#background)"/>
-  <rect x="5" y="5" width="118" height="118" rx="24" fill="none" stroke="#44475a" stroke-width="2"/>
-  <path d="m33 41 25 23-25 23" fill="none" stroke="#bd93f9" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
-  <rect x="67" y="77" width="29" height="12" rx="3" fill="#50fa7b"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Ternway"><rect x="8" y="8" width="240" height="240" rx="54" fill="#142B3B"/><path d="M32 64H94L128 88L96 112H68Z" fill="#4CA6C5"/><path d="M160 64H224L188 104L128 136V186L96 216V122Z" fill="#EDF4F7"/></svg>

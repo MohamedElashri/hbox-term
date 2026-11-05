@@ -1,4 +1,4 @@
-# hbox-term user guide
+# Ternway user guide
 
 ## What it does
 
@@ -174,3 +174,10 @@ background = 3a1418
 hbox-term runs on your computer and talks to servers over SSH only. Secrets are encrypted locally.
 Disruptive operations such as firewall changes, account deletion or service actions ask for
 confirmation first; keep an independent recovery path before changing remote access or critical services.
+
+## About Ternway
+
+Open Settings → About Ternway to view the version, platform, credits and license,
+or copy build details when reporting an issue. Copied details contain only the
+version, OS/architecture, build type and source commit. Existing hbox-term data
+and configuration paths remain compatible after the display-name change.

@@ -27,9 +27,9 @@ build-debug: node_modules ## Debug binary with the frontend embedded, no bundles
 
 qa-macos: node_modules ## Build an isolated, ad-hoc-signed macOS QA app
 	@test "$$(uname -s)" = Darwin
-	npm run tauri -- build --debug --bundles app --config '{"productName":"hbox-term QA","identifier":"dev.elashri.hbox-term.qa","bundle":{"createUpdaterArtifacts":false}}'
-	codesign --force --deep --sign - --identifier dev.elashri.hbox-term.qa "src-tauri/target/debug/bundle/macos/hbox-term QA.app"
-	codesign --verify --deep --strict "src-tauri/target/debug/bundle/macos/hbox-term QA.app"
+	npm run tauri -- build --debug --bundles app --config '{"productName":"Ternway QA","identifier":"dev.elashri.hbox-term.qa","bundle":{"createUpdaterArtifacts":false}}'
+	codesign --force --deep --sign - --identifier dev.elashri.hbox-term.qa "src-tauri/target/debug/bundle/macos/Ternway QA.app"
+	codesign --verify --deep --strict "src-tauri/target/debug/bundle/macos/Ternway QA.app"
 
 run: build-debug ## Build and start the debug binary
 	$(DEBUG_BINARY)

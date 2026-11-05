@@ -11,7 +11,7 @@ import { closeModal } from "./app/actions/admin";
 import { appendLogOutput } from "./app/actions/logs";
 import { transferUpload } from "./app/actions/remote";
 import { errorText } from "./app/command-client";
-import { handleChange, handleClick, handleInput, handleKeydown, handleSubmit, workspaceTabDrag } from "./app/events";
+import { handleChange, handleClick, handleInput, handleKeydown, handleSubmit, runAction, workspaceTabDrag } from "./app/events";
 import { render } from "./app/render";
 import { matchKeybinding } from "./app/keybindings";
 import { appWindow, DEFAULT_INTERFACE_SCALE, quickMode, root, state } from "./app/state";
@@ -26,6 +26,7 @@ import "./styles.css";
 import type { CredentialStatus, TerminalEvent, TransferProgress } from "./types";
 
 async function installEventListeners(): Promise<void> {
+  state.terminalUnlisteners.push(await listen("show-about", () => { void runAction("show-about"); }));
   state.terminalUnlisteners.push(await listen<TerminalEvent>("log-stream-output", (event) => {
     if (state.logsViewer.streamId === event.payload.sessionId) appendLogOutput(state.logsViewer, event.payload.data, "workspace");
     else if (state.containerLogViewer?.streamId === event.payload.sessionId) appendLogOutput(state.containerLogViewer, event.payload.data, "container");

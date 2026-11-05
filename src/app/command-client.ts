@@ -75,7 +75,7 @@ export function errorText(error: unknown): string {
   const structured = asStructured(error);
   if (structured && typeof structured.message === "string") return structured.message;
   if (structured && typeof structured.kind === "string") {
-    return `hbox-term received an invalid ${structured.kind} error response.`;
+    return `Ternway received an invalid ${structured.kind} error response.`;
   }
   return String(error instanceof Error ? error.message : error ?? "Something went wrong");
 }

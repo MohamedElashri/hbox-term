@@ -81,3 +81,26 @@ Agent authentication now preserves each key attempt's libssh2 error instead of r
 Native verification of this library change passed in the signed QA bundle: previewed two fixture aliases, imported both without connecting, observed a group with count two, renamed it, and observed its collapsed state survive switching to the saved SSH workspace. Settings and appearance icons were visually distinct. Fixture profiles remain only in the QA database under “QA imports.”
 
 The native SSH retry first timed out in handshake. A second attempt reached agent signing: sampling the QA process showed authenticate → libssh2_agent_userauth → agent_sign → agent_transact_unix → recv_checked → recvfrom waiting on a reply. It did not complete before cancellation; the QA app was quit and shutdown confirmed. This establishes the wait location, not the cause of missing 1Password approval. The independent test-executable login passed in the same session. Inspection of 1Password's Developer view was blocked by automatic approval review due to potential exposure of unrelated vault contents; it was not bypassed.
+
+## Ternway release branding
+
+The user selected Ternway. The app display name, window/boot copy, native About
+menu, Settings, icons and release artwork now use that identity. About shows the
+runtime version, OS/architecture, author, license, source/issue/release/license
+links and copyable build details (version, platform, build mode and source commit
+only). QA verified About from both Settings and the macOS menu, copy feedback,
+light/dark readability, retained connection groups, and signed-bundle validation.
+
+The identifier dev.elashri.hbox-term, existing SQLite/vault filenames, configuration
+directory, shell integration names, localStorage preferences, executable/package
+name, repository URLs and updater trust key remain compatible. The installer
+supports both old hbox-term.app and Ternway.app disk images. Release assets use
+ternway-v...; updater-manifest generation accepts branded/legacy names and beta
+versions, with regressions covering the change. Validation: 69 frontend tests
+under Node 24 and 39 Rust tests passed.
+
+Brand sources and the exact image-generation prompt are in docs/branding/ternway.
+The generated board is concept artwork; app icons and final Manrope lettering are
+editable vectors. The font's OFL notice is included. Browser preview access was
+unavailable, and Safari access was rejected by automatic review; visual
+verification was completed using the app's own isolated QA bundle instead.

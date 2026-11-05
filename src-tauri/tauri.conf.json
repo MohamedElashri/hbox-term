@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "hbox-term",
+  "productName": "Ternway",
   "version": "0.2.0-beta.1",
   "identifier": "dev.elashri.hbox-term",
   "build": {
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "hbox-term",
+        "title": "Ternway",
         "width": 1200,
         "height": 780,
         "minWidth": 640,
@@ -39,8 +39,8 @@
       "icons/icon.icns"
     ],
     "category": "DeveloperTool",
-    "shortDescription": "Terminal workspace for local and remote development",
-    "longDescription": "hbox-term is a fast terminal workspace with agentless Linux server management over SSH.",
+    "shortDescription": "Local shells and remote machines in one workspace",
+    "longDescription": "Ternway brings local terminals, organized SSH connections and server tools together on macOS and Linux.",
     "createUpdaterArtifacts": true
   },
   "plugins": {

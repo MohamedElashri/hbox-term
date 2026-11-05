@@ -75,10 +75,12 @@ jobs:
             echo "Reusing existing release for ${RELEASE_TAG}."
           else
             echo "Creating draft release for ${RELEASE_TAG}."
-            gh release create "$RELEASE_TAG" \
+            prerelease=()
+            [[ "${RELEASE_TAG}" == *-* ]] && prerelease=(--prerelease)
+            gh release create "$RELEASE_TAG" "${prerelease[@]}" \
               --repo "$GITHUB_REPOSITORY" \
               --target "$GITHUB_SHA" \
-              --title "hbox-term ${RELEASE_TAG}" \
+              --title "Ternway ${RELEASE_TAG}" \
               --notes-file release-notes.md \
               --draft
 
@@ -183,7 +185,7 @@ jobs:
           releaseId: ${{ needs.create-release.outputs.release_id }}
           tagName: ${{ env.RELEASE_TAG }}
           releaseDraft: ${{ needs.create-release.outputs.release_draft }}
-          releaseAssetNamePattern: "hbox-term-v[version]-[platform]-[arch]-[bundle][setup][ext]"
+          releaseAssetNamePattern: "ternway-v[version]-[platform]-[arch]-[bundle][setup][ext]"
           uploadUpdaterJson: false
           uploadUpdaterSignatures: true
           args: --target ${{ matrix.rust_target }}

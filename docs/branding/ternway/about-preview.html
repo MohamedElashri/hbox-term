@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>About Ternway — brand proposal</title>
+<style>
+:root{color-scheme:light;--bg:#edf4f7;--paper:#fff;--ink:#142b3b;--muted:#4d6676;--line:#cddce4;--accent:#227c9d}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 system-ui,sans-serif}
+body.dark{color-scheme:dark;--bg:#102330;--paper:#142b3b;--ink:#edf4f7;--muted:#b8cdd8;--line:#365363;--accent:#79c5de}
+header{max-width:1040px;margin:32px auto;display:flex;justify-content:space-between;gap:24px;padding:0 24px;align-items:center}
+button,a{font:inherit}button{cursor:pointer;background:transparent;color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:9px 15px}
+button:focus-visible,a:focus-visible{outline:3px solid var(--accent);outline-offset:4px}
+main{max-width:840px;margin:48px auto 80px;padding:0 24px}
+.about{background:var(--paper);border:1px solid var(--line);border-radius:20px;overflow:hidden;box-shadow:0 16px 56px #142b3b12}
+.hero{padding:48px 48px 32px;display:flex;gap:28px;align-items:center}
+.hero img{width:112px;height:112px}.hero h1{font-size:48px;letter-spacing:-2px;line-height:1.1;margin:0 0 10px;font-weight:650}
+.version{color:var(--muted);margin:0}.intro{padding:0 48px 32px}.intro h2{font-size:24px;line-height:1.4;letter-spacing:-.6px;font-weight:550;margin:0 0 16px}.intro p{margin:0;color:var(--muted);max-width:62ch}
+.meta{padding:26px 48px;border-block:1px solid var(--line);display:grid;grid-template-columns:1fr 1fr;gap:24px}
+.meta dt{color:var(--muted);font-size:14px}.meta dd{margin:5px 0 0;font-weight:550}.links{display:flex;gap:26px;flex-wrap:wrap;padding:30px 48px}
+a{color:var(--accent);text-underline-offset:4px}.foot{border-top:1px solid var(--line);padding:24px 48px;color:var(--muted);font-size:14px;display:flex;justify-content:space-between;gap:18px;flex-wrap:wrap}
+.note{color:var(--muted);font-size:14px}.note a{font-size:14px}
+@media(max-width:560px){header{align-items:flex-start}.hero{padding:28px 24px 24px;gap:16px}.hero h1{font-size:36px}.hero img{width:80px;height:80px}.intro{padding:0 24px 26px}.meta,.links,.foot{padding:24px}.meta{grid-template-columns:1fr}main{margin-top:28px}}
+</style>
+<header><span>Ternway / Brand proposal</span><button id="appearance" aria-pressed="false">Dark preview</button></header>
+<main><article class="about" aria-labelledby="name"><div class="hero"><img src="app-icon.svg" alt="Folded tern-wing app icon"><div><h1 id="name">Ternway</h1><p class="version">Version 0.2.0-beta.1 · Preview release</p></div></div>
+<div class="intro"><h2>Your machines. One workspace.</h2><p>A desktop workspace for local shells and remote machines. Keep SSH connections organized, work with files, and move between terminals and server tools on macOS and Linux.</p></div>
+<dl class="meta"><div><dt>Created by</dt><dd>Mohamed Elashri</dd></div><div><dt>License</dt><dd>MIT</dd></div><div><dt>Built with</dt><dd>Rust, Tauri and xterm.js</dd></div><div><dt>Platforms</dt><dd>macOS and Linux</dd></div></dl>
+<nav class="links" aria-label="Project links"><a href="https://github.com/MohamedElashri/hbox-term">Source code</a><a href="https://github.com/MohamedElashri/hbox-term/issues">Report an issue</a><a href="https://github.com/MohamedElashri/hbox-term/blob/main/CHANGELOG.md">Release notes</a><a href="https://github.com/MohamedElashri/hbox-term/blob/main/LICENSE">License</a></nav>
+<footer class="foot"><span>Open source. Built for everyday operations.</span><span>Previously hbox-term</span></footer></article>
+<p class="note">About page design preview. Ternway is the selected release name; this standalone preview accompanies the in-app About screen. Repository links use the current project address. <a href="concept-board.png">View the concept board</a></p></main>
+<script>document.getElementById("appearance").addEventListener("click",function(){const dark=document.body.classList.toggle("dark");this.setAttribute("aria-pressed",String(dark));this.textContent=dark?"Light preview":"Dark preview";});</script></html>

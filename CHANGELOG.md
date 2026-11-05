@@ -2,7 +2,14 @@
 
 ## 0.2.0-beta.1 - 2026-11-05
 
-Preview release of the redesigned connection library and SSH-agent identities.
+Preview release of Ternway (formerly hbox-term), with a redesigned connection library and SSH-agent identities.
+
+### Ternway identity
+
+- New display name, folded-wing logo, application icons and release artwork.
+- Branded About page with runtime version/platform details, credits, license, project links and copyable build details.
+- Existing identifiers, data/configuration paths, repository and updater trust stay compatible.
+- Branded release assets and beta updater manifests, with legacy asset-name support.
 
 ### Connection library
 
@@ -24,7 +31,7 @@ Preview release of the redesigned connection library and SSH-agent identities.
 
 ### Validation
 
-- 65 frontend tests and 39 Rust tests passed on macOS; two live-only tests are excluded from the normal suite.
+- 69 frontend tests and 39 Rust tests passed on macOS; two live-only tests are excluded from the normal suite.
 - Authorized read-only SSH authentication through 1Password passed using the production client in the test executable.
 - Native macOS QA verified import, group rename/collapse, connection saving, local terminal output, and distinct icons.
 - Added a macOS/Linux CI matrix and an isolated, ad-hoc-signed macOS QA build target.

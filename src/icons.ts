@@ -1,5 +1,5 @@
 const paths: Record<string, string> = {
-  logo: '<rect x="3" y="3" width="18" height="18" rx="5"/><path d="m8 9 3 3-3 3M13 15h3"/>',
+  logo: '<path d="M3 6h5.8L12 8.3 9 10.5H6.4z" fill="currentColor" stroke="none"/><path d="M15 6h6l-3.4 3.8-5.6 3v4.6l-3 2.9v-8.8z" fill="currentColor" stroke="none"/>',
   dashboard: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
   terminal: '<path d="m4 5 6 6-6 6M13 17h7"/>',
   processes: '<path d="M4 19V5m0 14h16M8 16v-5m4 5V7m4 9v-8"/>',

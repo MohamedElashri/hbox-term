@@ -11,7 +11,7 @@ import { renderCollectionFooter } from "./system";
 
 export function renderDocker(): string {
   const cap = activeCapabilities();
-  if (cap && !cap.docker && !cap.podman) return renderUnsupported("No container runtime is available", "The SSH endpoint is not a Docker or Podman host. Install Docker or Podman on that server and reconnect; hbox-term will detect it automatically.");
+  if (cap && !cap.docker && !cap.podman) return renderUnsupported("No container runtime is available", "The SSH endpoint is not a Docker or Podman host. Install Docker or Podman on that server and reconnect; Ternway will detect it automatically.");
   return `<section class="docker-workspace"><div class="subnav-tabs workspace-tabs container-platform-tabs"><button class="subnav-tab ${state.containerPlatformTab === "runtime" ? "active" : ""}" data-container-platform-tab="runtime">Runtime resources</button><button class="subnav-tab ${state.containerPlatformTab === "compose" ? "active" : ""}" data-container-platform-tab="compose">Compose projects</button></div>${state.containerPlatformTab === "compose" ? renderComposeProjects() : renderRuntimeResources()}${containerLogBelongsToActiveTab() ? renderContainerLogs() : ""}</section>`;
 }
 
