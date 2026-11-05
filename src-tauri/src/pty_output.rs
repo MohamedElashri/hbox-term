@@ -13,7 +13,7 @@
 //! more than `MAX_UNACKED_BYTES` are outstanding, backends stop reading so the remote
 //! side is throttled instead of memory piling up in the webview.
 
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tauri::ipc::{Channel, InvokeResponseBody};
@@ -29,9 +29,15 @@ pub type OutputChannel = Channel<InvokeResponseBody>;
 
 /// Bytes sent to the webview but not yet parsed by xterm.js.
 #[derive(Clone, Default)]
-pub struct Unacked(Arc<AtomicUsize>);
+pub struct Unacked(Arc<AtomicUsize>, Arc<AtomicBool>);
 
 impl Unacked {
+    pub(crate) fn stopped(&self) -> bool {
+        self.1.load(Ordering::Acquire)
+    }
+    pub(crate) fn stop(&self) {
+        self.1.store(true, Ordering::Release);
+    }
     pub fn ack(&self, bytes: usize) {
         let _ = self
             .0
@@ -59,6 +65,12 @@ pub struct OutputPump {
     unacked: Unacked,
     buffer: Vec<u8>,
     last_flush: Instant,
+}
+
+impl Drop for OutputPump {
+    fn drop(&mut self) {
+        self.unacked.stop();
+    }
 }
 
 impl OutputPump {

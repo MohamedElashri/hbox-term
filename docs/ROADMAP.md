@@ -4,9 +4,9 @@ Each numbered stage starts from current main, is tested and reviewed in its own 
 merged before the next starts. PR bodies contain only a short “This PR is …” description.
 The preceding QA/password fixes and native OpenSSH support are merged in #6 and #8.
 
-1. **Shared SSH handling — in progress.** Share OpenSSH routing/authentication across terminals,
+1. **Shared SSH handling — merged in #9.** Share OpenSSH routing/authentication across terminals,
    SFTP and tunnels, with private app-owned connection control and explicit ownership cleanup.
-2. **Lifecycle and recovery — pending.** Accurate connection states, interruption handling,
+2. **Lifecycle and recovery — in progress.** Accurate connection states, interruption handling,
    safe cancel/reconnect and sleep/network recovery without command replay.
 3. **Workspaces — pending.** Named layouts, ordinary windows and local/remote workspace restore;
    restoring a layout must not imply resuming a process or running remote commands.

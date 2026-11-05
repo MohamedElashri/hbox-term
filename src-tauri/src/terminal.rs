@@ -34,7 +34,7 @@ const MIN_POLL_INTERVAL: Duration = Duration::from_millis(1);
 
 #[derive(Clone)]
 pub struct TerminalSession {
-    server_id: String,
+    pub(crate) server_id: String,
     sender: mpsc::Sender<TerminalCommand>,
     pending_input_bytes: Arc<AtomicUsize>,
     unacked: Unacked,
@@ -422,8 +422,11 @@ pub fn close(sessions: &TerminalSessions, session_id: &str) -> Result<(), String
     if let Some(sender) = sessions
         .lock()
         .map_err(|_| "Terminal session lock was poisoned".to_string())?
-        .get(session_id)
-        .map(|session| session.sender.clone())
+        .remove(session_id)
+        .map(|session| {
+            session.unacked.stop();
+            session.sender
+        })
     {
         let _ = sender.send(TerminalCommand::Close);
     }

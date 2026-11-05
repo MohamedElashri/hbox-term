@@ -343,6 +343,7 @@ export interface TerminalTab {
   sessionId?: string;
   title: string;
   command?: string;
+  phase?: import("./app/connection-lifecycle").ConnectionPhase;
   connecting: boolean;
   closed?: boolean;
 }

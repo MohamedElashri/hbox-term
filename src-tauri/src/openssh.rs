@@ -100,6 +100,8 @@ pub(crate) fn start(
             "-oControlMaster=auto".into(),
             "-oControlPersist=300".into(),
             "-oForkAfterAuthentication=no".into(),
+            "-oServerAliveInterval=15".into(),
+            "-oServerAliveCountMax=3".into(),
             "-S".into(),
             socket.into_os_string(),
         ];
@@ -435,7 +437,7 @@ mod loopback_openssh {
     #[ignore = "Run make test-openssh with the loopback fixture dependencies"]
     fn shared_terminal_files_commands_and_tunnels_use_one_authenticated_transport() {
         use std::io::{Read, Write};
-        let fixture = SshFixture::start("publickey");
+        let mut fixture = SshFixture::start("publickey");
         let key = fixture.directory.join("client");
         assert!(std::process::Command::new("ssh-keygen")
             .args(["-q", "-t", "ed25519", "-N", "", "-f"])
@@ -528,6 +530,42 @@ mod loopback_openssh {
             1,
             "Slave tools must not open another TCP connection"
         );
+        let tunnel = crate::models::TunnelConfig {
+            id: uuid::Uuid::new_v4().to_string(),
+            server_id: profile.id.clone(),
+            name: "restart".into(),
+            kind: "local".into(),
+            bind_host: "127.0.0.1".into(),
+            bind_port: port,
+            target_host: "127.0.0.1".into(),
+            target_port,
+        };
+        for _ in 0..3 {
+            crate::tunnels::start(store.clone(), tunnel.clone()).unwrap();
+            let until = Instant::now() + Duration::from_secs(3);
+            loop {
+                if std::net::TcpListener::bind(("127.0.0.1", port)).is_err() {
+                    break;
+                }
+                assert!(
+                    Instant::now() < until,
+                    "Tunnel did not start: {:?}",
+                    crate::tunnels::statuses(&[tunnel.id.clone()])[0].error
+                );
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            crate::tunnels::stop(&tunnel.id).unwrap();
+            assert!(
+                std::net::TcpListener::bind(("127.0.0.1", port)).is_ok(),
+                "Stopped tunnel retained its listener"
+            );
+        }
+        fixture.stop();
+        let until = Instant::now() + Duration::from_secs(5);
+        while crate::openssh_pool::ready(&profile) {
+            assert!(Instant::now() < until, "Dead transport remained ready");
+            std::thread::sleep(Duration::from_millis(25));
+        }
         crate::openssh_pool::disconnect(&profile.id);
         assert!(!crate::openssh_pool::ready(&profile));
         assert!(client.exec("must-not-reconnect").is_err());

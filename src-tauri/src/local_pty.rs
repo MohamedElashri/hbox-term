@@ -269,8 +269,11 @@ fn spawn_reader(mut reader: Box<dyn Read + Send>, events: mpsc::Sender<Event>, u
     thread::spawn(move || {
         let mut buffer = vec![0u8; 64 * 1024];
         loop {
-            while unacked.saturated() {
+            while unacked.saturated() && !unacked.stopped() {
                 thread::sleep(BACKPRESSURE_WAIT);
+            }
+            if unacked.stopped() {
+                break;
             }
             match reader.read(&mut buffer) {
                 // Linux reports EIO once the child side has closed.
@@ -373,6 +376,23 @@ mod tests {
     use std::collections::HashMap;
     use std::sync::Mutex;
     use tauri::ipc::{Channel, InvokeResponseBody};
+
+    #[test]
+    fn closing_a_saturated_pump_releases_its_reader_without_an_ack() {
+        let unacked = Unacked::default();
+        let mut pump = OutputPump::new(Channel::new(|_| Ok(())), unacked.clone());
+        pump.push(&vec![b'x'; 4 * 1024 * 1024]);
+        pump.flush_if_due();
+        assert!(unacked.saturated());
+        let (events, received) = mpsc::channel();
+        spawn_reader(Box::new(std::io::Cursor::new(vec![1u8])), events, unacked);
+        assert!(received.recv_timeout(Duration::from_millis(20)).is_err());
+        drop(pump);
+        assert!(matches!(
+            received.recv_timeout(Duration::from_secs(1)).unwrap(),
+            Event::Eof
+        ));
+    }
 
     fn run_shell(script: &str) -> (String, String) {
         let (frames, received) = mpsc::channel();
