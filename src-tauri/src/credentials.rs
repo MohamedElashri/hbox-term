@@ -72,6 +72,22 @@ struct ServerCredentials {
 }
 
 impl CredentialStore {
+    pub(crate) fn encrypted_snapshot(&self) -> Result<Option<Vec<u8>>, String> {
+        let state = self.inner.lock().map_err(|e| e.to_string())?;
+        if !state.path.exists() { return Ok(None); }
+        let metadata = fs::symlink_metadata(&state.path).map_err(|e| e.to_string())?;
+        if !metadata.is_file() || metadata.len() > 8 * 1024 * 1024 { return Err("Invalid encrypted vault file".into()); }
+        let bytes = fs::read(&state.path).map_err(|e| e.to_string())?;
+        parse_file(&bytes)?;
+        Ok(Some(bytes))
+    }
+    pub(crate) fn replace_encrypted(&self, bytes: Option<&[u8]>) -> Result<(), String> {
+        let mut state = self.inner.lock().map_err(|e| e.to_string())?;
+        replace_encrypted_file(&state.path, bytes)?;
+        state.key = None; state.salt = None; state.document = CredentialDocument::default();
+        Ok(())
+    }
+    pub(crate) fn journal_path(&self) -> Result<PathBuf, String> { Ok(self.inner.lock().map_err(|e| e.to_string())?.path.with_extension("restore-journal")) }
     pub fn open(path: &Path) -> Result<Self, String> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)
@@ -302,6 +318,12 @@ impl CredentialStore {
             .map(|state| state.path.exists())
             .unwrap_or(false)
     }
+}
+
+pub(crate) fn replace_encrypted_file(path: &Path, bytes: Option<&[u8]>) -> Result<(), String> {
+    if let Some(bytes) = bytes { parse_file(bytes)?; atomic_write(path, bytes) }
+    else if path.exists() { fs::remove_file(path).map_err(|e| e.to_string()) }
+    else { Ok(()) }
 }
 
 fn ensure_unlocked_state(state: &CredentialState) -> Result<(), String> {

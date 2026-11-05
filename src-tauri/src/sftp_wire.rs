@@ -334,11 +334,11 @@ impl Client {
         }
         Ok(c.data.to_vec())
     }
-    fn handle(self: &Arc<Self>, kind: u8, p: &Path, write: bool) -> Result<Vec<u8>, FsError> {
+    fn handle(self: &Arc<Self>, kind: u8, p: &Path, flags: u32) -> Result<Vec<u8>, FsError> {
         let mut body = Vec::new();
         path(p, &mut body)?;
         if kind == 3 {
-            u32_bytes(if write { 2 | 8 | 16 } else { 1 }, &mut body);
+            u32_bytes(flags, &mut body);
             u32_bytes(0, &mut body);
         }
         let response = self.request(kind, body, 102)?;
@@ -353,14 +353,21 @@ impl Client {
     pub fn open(self: &Arc<Self>, p: &Path, write: bool) -> Result<File, FsError> {
         Ok(File {
             client: self.clone(),
-            handle: self.handle(3, p, write)?,
+            handle: self.handle(3, p, if write { 2 | 8 | 16 } else { 1 })?,
+            offset: 0,
+        })
+    }
+    pub fn write_existing(self: &Arc<Self>, p: &Path) -> Result<File, FsError> {
+        Ok(File {
+            client: self.clone(),
+            handle: self.handle(3, p, 2)?,
             offset: 0,
         })
     }
     pub fn opendir(self: &Arc<Self>, p: &Path) -> Result<Directory, FsError> {
         Ok(Directory {
             client: self.clone(),
-            handle: self.handle(11, p, false)?,
+            handle: self.handle(11, p, 0)?,
             entries: VecDeque::new(),
             done: false,
         })
@@ -421,8 +428,7 @@ impl Client {
     }
     pub fn rename(&self, p: &Path, q: &Path, flags: Option<RenameFlags>) -> Result<(), FsError> {
         let flags = flags.unwrap_or(RenameFlags::empty());
-        let extended = flags.contains(RenameFlags::OVERWRITE)
-            && self.posix.load(Ordering::Relaxed);
+        let extended = flags.contains(RenameFlags::OVERWRITE) && self.posix.load(Ordering::Relaxed);
         if flags.contains(RenameFlags::ATOMIC) && !extended {
             return Err(FsError {
                 code: ErrorCode::SFTP(8),
@@ -443,6 +449,11 @@ pub(crate) struct File {
     client: Arc<Client>,
     handle: Vec<u8>,
     offset: u64,
+}
+impl File {
+    pub fn set_position(&mut self, offset: u64) {
+        self.offset = offset;
+    }
 }
 impl Drop for File {
     fn drop(&mut self) {

@@ -478,8 +478,24 @@ mod loopback_openssh {
         let bytes: Vec<u8> = (0..200_000).map(|n| (n % 251) as u8).collect();
         {
             let mut file = fsys.create(name).unwrap();
-            file.write_all(&bytes).unwrap();
+            file.write_all(&bytes[..50000]).unwrap();
         }
+        // Resume an interrupted native SFTP upload only after comparing its full prefix.
+        let mut source = std::io::Cursor::new(&bytes);
+        let mut partial = fsys.open(name).unwrap();
+        crate::transfer_queue::verify_prefix(&mut source, &mut partial, 50000, None).unwrap();
+        drop(partial);
+        let mut resumed = fsys.write_existing(name).unwrap();
+        resumed.set_position(50000).unwrap();
+        resumed.write_all(&bytes[50000..]).unwrap();
+        drop(resumed);
+        let original = std::path::Path::new("/folder/rename-denied");
+        let staging = std::path::Path::new("/folder/staging");
+        fsys.create(original).unwrap().write_all(b"original").unwrap();
+        fsys.create(staging).unwrap().write_all(b"new").unwrap();
+        assert!(crate::providers::rename_staging(&fsys, staging, original, true).is_err());
+        let mut preserved=Vec::new(); fsys.open(original).unwrap().read_to_end(&mut preserved).unwrap(); assert_eq!(preserved,b"original");
+        fsys.unlink(original).unwrap(); fsys.unlink(staging).unwrap();
         let mut actual = Vec::new();
         fsys.open(name).unwrap().read_to_end(&mut actual).unwrap();
         assert_eq!(actual, bytes);

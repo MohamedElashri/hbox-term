@@ -30,6 +30,8 @@ export const remoteOperationLabels: Record<string, string> = {
   read_remote_file: "Opening the remote file…",
   write_remote_file: "Saving the remote file…",
   remote_file_action: "Updating the remote files…",
+  run_transfer_job: "Transferring queued files…",
+  retry_remote_edit_recovery: "Uploading recovered edits…",
   upload_path: "Uploading to the server…",
   download_path: "Downloading from the server…",
   start_terminal: "Opening an interactive shell…",
@@ -248,7 +250,7 @@ export function createCommandClient(options: CommandClientOptions) {
 
     cancelCurrentOperation();
     const requestGeneration = generation;
-    const operation: ActiveOperation = { id: crypto.randomUUID(), label, serverId: operationServerId(args), cancelled: false };
+    const operation: ActiveOperation = { command, id: crypto.randomUUID(), label, serverId: operationServerId(args), cancelled: false };
     options.setActiveOperation(operation);
     options.render();
     try {

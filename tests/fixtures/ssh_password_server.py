@@ -86,6 +86,8 @@ class Files(paramiko.SFTPServerInterface):
         return self.posix_rename(old, new)
 
     def posix_rename(self, old, new):
+        if str(new).endswith("rename-denied"):
+            return paramiko.SFTP_PERMISSION_DENIED
         return self._call(lambda: (os.replace(self.local(old), self.local(new)), paramiko.SFTP_OK)[1])
 
     def chattr(self, path, attr):

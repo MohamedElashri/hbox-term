@@ -20,6 +20,9 @@ mod providers;
 mod pty_output;
 mod quick;
 mod remote_edit;
+mod transfer_queue;
+mod connection_library;
+mod library_backup;
 mod remote_fs;
 mod sftp_wire;
 mod remote_integration;
@@ -1234,7 +1237,7 @@ fn upload_path(
         &remote_path,
         overwrite,
         app,
-        operation_id.as_deref(),
+        providers::TransferOptions { operation_id: operation_id.as_deref(), queue_id: None },
     )?)
 }
 
@@ -1253,13 +1256,21 @@ fn download_path(
         &remote_path,
         &local_path,
         app,
-        operation_id.as_deref(),
+        providers::TransferOptions { operation_id: operation_id.as_deref(), queue_id: None },
     )?)
 }
 
 #[tauri::command(async)]
 fn cancel_operation(operation_id: String) -> Result<(), AppError> {
     Ok(ssh::cancel_operation(&operation_id)?)
+}
+
+#[tauri::command(async)]
+fn background_activity(state: State<'_, AppState>, queue: State<'_, transfer_queue::TransferQueue>, server_id: Option<String>) -> Result<serde_json::Value, AppError> {
+    let ids = state.store.list_servers()?.into_iter().filter(|p|server_id.as_ref().is_none_or(|id|p.id==*id)).map(|p|p.id).collect::<Vec<_>>();
+    let mut tunnel_ids=Vec::new(); for id in ids { tunnel_ids.extend(state.store.list_tunnels(&id)?.into_iter().map(|t|t.id)); }
+    let tunnels=tunnels::statuses(&tunnel_ids).into_iter().filter(|t|t.running).count();
+    Ok(serde_json::json!({"tunnels":tunnels,"transfers":queue.pending_count(server_id.as_deref())}))
 }
 
 #[tauri::command(async)]
@@ -1396,6 +1407,7 @@ struct RemoteEditOpened {
 #[tauri::command(async)]
 fn start_remote_edit(
     app: AppHandle,
+    window: tauri::WebviewWindow,
     state: State<'_, AppState>,
     edits: State<'_, remote_edit::RemoteEdits>,
     server_id: String,
@@ -1404,6 +1416,7 @@ fn start_remote_edit(
 ) -> Result<RemoteEditOpened, AppError> {
     let started = remote_edit::start(
         app,
+        window.label().to_owned(),
         state.store.clone(),
         edits.inner().clone(),
         server_id,
@@ -1527,7 +1540,16 @@ fn overwrite_remote_edit(
     Ok(remote_edit::overwrite(&edits, &id)?)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
+fn list_remote_edit_recoveries(app: AppHandle, edits: State<'_, remote_edit::RemoteEdits>) -> Result<Vec<remote_edit::Recovery>, AppError> { Ok(remote_edit::recoveries(&app, &edits)?) }
+
+#[tauri::command(async)]
+fn retry_remote_edit_recovery(app: AppHandle, state: State<'_, AppState>, edits: State<'_, remote_edit::RemoteEdits>, id: String, overwrite: bool) -> Result<(), AppError> { Ok(remote_edit::retry_recovery(&app, &edits, &state.store, &id, overwrite)?) }
+
+#[tauri::command(async)]
+fn flush_remote_edit(edits: State<'_, remote_edit::RemoteEdits>, id: String) -> Result<(), AppError> { Ok(remote_edit::flush(&edits, &id)?) }
+
+#[tauri::command(async)]
 fn finish_remote_edit(
     edits: State<'_, remote_edit::RemoteEdits>,
     id: String,
@@ -1891,8 +1913,9 @@ pub fn run() {
             if let Err(error) = local_pty::install_shell_integration(&data_dir) {
                 eprintln!("ternway shell integration unavailable: {error}");
             }
-            let state = AppState::open(data_dir).map_err(std::io::Error::other)?;
+            let state = AppState::open(data_dir.clone()).map_err(std::io::Error::other)?;
             app.manage(state);
+            app.manage(transfer_queue::TransferQueue::open(data_dir.join("transfers.json")).map_err(std::io::Error::other)?);
             vault_lock::install(app.handle());
             desktop_windows::setup(app.handle()).map_err(std::io::Error::other)?;
             // `ternway --toggle-quick` as the first launch opens only the quick terminal.
@@ -1917,6 +1940,12 @@ pub fn run() {
             change_master_password,
             reset_credentials,
             get_state,
+            connection_library::import_connection,
+            connection_library::inspect_import_source,
+            connection_library::bulk_connection_metadata,
+            library_backup::export_library_backup,
+            library_backup::preview_library_backup,
+            library_backup::restore_library_backup,
             save_server,
             set_ssh_password,
             set_connection_group,
@@ -1932,6 +1961,7 @@ pub fn run() {
             disconnect_server,
             shared_ssh_ready,
             connection_health,
+            background_activity,
             connect_server,
             replace_host_key,
             accept_host_key,
@@ -1987,6 +2017,10 @@ pub fn run() {
             read_remote_file,
             write_remote_file,
             remote_file_action,
+            transfer_queue::list_transfer_jobs,
+            transfer_queue::enqueue_transfer,
+            transfer_queue::transfer_job_action,
+            transfer_queue::run_transfer_job,
             upload_path,
             download_path,
             start_terminal,
@@ -2013,6 +2047,9 @@ pub fn run() {
             free_local_port,
             overwrite_remote_edit,
             finish_remote_edit,
+            flush_remote_edit,
+            list_remote_edit_recoveries,
+            retry_remote_edit_recovery,
             load_theme,
             open_config_file,
             close_terminal,

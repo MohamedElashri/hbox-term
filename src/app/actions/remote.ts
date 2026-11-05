@@ -1,3 +1,5 @@
+import { showToast } from "../toasts";
+import { enqueueTransfer } from "../transfer-queue";
 import { openRemoteEditor } from "../terminal";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import type { DashboardCard, DockerPage, PackagePage, Page, PortInfo, ProcessInfo, RemoteFile, ServerConnection, ServiceInfo, TransferProgress } from "../../types";
@@ -258,41 +260,8 @@ export async function uploadLocalFolder(): Promise<void> {
 /** Uploads into the Files view's directory, or into `remotePath` (e.g. a terminal pane's directory). */
 export async function transferUpload(localPath: string, remotePath = state.remotePath, serverId = state.activeServerId): Promise<void> {
   if (!serverId) return;
-  const refresh = async () => { if (state.activeView === "files" && serverId === state.activeServerId) await loadFiles(); };
-  state.transfer = { transferId: "pending", direction: "upload", path: localPath, completedBytes: 0, totalBytes: 0, completedFiles: 0, totalFiles: 0, done: false };
-  syncTransferToast();
-  try {
-    state.transfer = await invokeCommand<TransferProgress>("upload_path", { serverId, localPath, remotePath, overwrite: false });
-    await refresh();
-  } catch (error) {
-    const conflict = error !== null && typeof error === "object" && (error as { kind?: unknown }).kind === "uploadConflict"
-      ? error as { paths?: unknown; count?: unknown }
-      : null;
-    if (conflict) {
-      const paths = Array.isArray(conflict.paths) ? conflict.paths.filter((path): path is string => typeof path === "string") : [];
-      const count = typeof conflict.count === "number" ? conflict.count : paths.length;
-      const listed = paths.map((path) => `• ${path}`).join("\n");
-      const remaining = count > paths.length ? `\n…and ${count - paths.length} more.` : "";
-      if (await confirm(`${count} remote ${count === 1 ? "file already exists" : "files already exist"}. Replace ${count === 1 ? "it" : "them"}?\n${listed}${remaining}`, { title: "Replace remote files?", kind: "warning" })) {
-        try {
-          state.transfer = await invokeCommand<TransferProgress>("upload_path", { serverId, localPath, remotePath, overwrite: true });
-          await refresh();
-        } catch (retryError) {
-          state.transfer = { ...state.transfer, done: true, error: errorText(retryError) };
-          setError(retryError);
-        }
-      } else {
-        state.transfer = null;
-      }
-    } else {
-      state.transfer = { ...state.transfer, done: true, error: errorText(error) };
-      setError(error);
-    }
-  }
-  if (state.transfer?.done) {
-    syncTransferToast();
-    dismissTransferToast(state.transfer.transferId);
-  }
+  try { await enqueueTransfer(serverId, "upload", localPath, remotePath); showToast("Upload queued. Review progress in Transfer queue.", "info"); }
+  catch (error) { setError(error); }
 }
 
 export async function downloadRemote(path: string): Promise<void> {
@@ -318,11 +287,8 @@ export async function downloadRemote(path: string): Promise<void> {
     });
   }
   if (!localPath?.trim()) return;
-  try {
-    state.transfer = await invokeCommand<TransferProgress>("download_path", { serverId: state.activeServerId, remotePath: path, localPath: localPath.trim() });
-    syncTransferToast();
-    dismissTransferToast(state.transfer.transferId);
-  } catch (error) { setError(error); }
+  try { await enqueueTransfer(state.activeServerId, "download", localPath.trim(), path); showToast("Download queued. Review progress in Transfer queue.", "info"); }
+  catch (error) { setError(error); }
 }
 
 export function cancelTransfer(): void {

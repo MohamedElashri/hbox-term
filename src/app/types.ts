@@ -16,7 +16,7 @@ export type DockerSection = "containers" | "images" | "volumes" | "networks";
 export type ContainerPlatformTab = "runtime" | "compose";
 export type AdministrationTab = "firewall" | "keys" | "security" | "actions";
 export type ServerToolTab = AdministrationTab | "commands" | "tunnels";
-export type ModalKind = "workspaces" | "about" | "updates" | "ssh-import" | "identities" | "server" | "workspace-tab-rename" | "service" | "editor" | "folder" | "docker" | "inspect" | "input-prompt" | "compose-scale" | "security" | "ssh-password" | "master-password" | "host-key" | "change-password" | "reset-credentials" | "cron" | "user" | "user-password" | "package-details" | "command" | "tunnel" | null;
+export type ModalKind = "library-tools" | "transfers" | "workspaces" | "about" | "updates" | "ssh-import" | "identities" | "server" | "workspace-tab-rename" | "service" | "editor" | "folder" | "docker" | "inspect" | "input-prompt" | "compose-scale" | "security" | "ssh-password" | "master-password" | "host-key" | "change-password" | "reset-credentials" | "cron" | "user" | "user-password" | "package-details" | "command" | "tunnel" | null;
 export type MasterPasswordPromptMode = "setup" | "unlock";
 export type DashboardCardName = DashboardCard["kind"];
 
@@ -79,6 +79,7 @@ export interface WorkspaceTab {
 }
 
 export interface ActiveOperation {
+  command?: string;
   id: string;
   label: string;
   serverId?: string;
