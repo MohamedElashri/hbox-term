@@ -8,6 +8,8 @@ mod disk;
 mod editor;
 mod identities;
 mod local_pty;
+mod desktop_windows;
+mod layout_files;
 mod log_stream;
 mod models;
 mod openssh;
@@ -1100,15 +1102,18 @@ fn get_log_files(
 #[tauri::command(async)]
 fn start_log_stream(
     app: AppHandle,
+    window: tauri::WebviewWindow,
     state: State<'_, AppState>,
     request: LogStreamRequest,
 ) -> Result<LogStreamStarted, AppError> {
-    Ok(log_stream::start(
-        app,
+    let started = log_stream::start(
+        app.clone(),
         state.store.clone(),
         state.log_streams.clone(),
         request,
-    )?)
+    )?;
+    desktop_windows::own_log(&app, window.label(), &started.session_id)?;
+    Ok(started)
 }
 
 #[tauri::command]
@@ -1295,57 +1300,78 @@ fn disconnect_server(state: State<'_, AppState>, server_id: String) -> Result<()
 
 #[tauri::command(async)]
 fn start_terminal(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
     state: State<'_, AppState>,
     request: TerminalRequest,
     on_output: pty_output::OutputChannel,
     operation_id: Option<String>,
 ) -> Result<TerminalStarted, AppError> {
-    Ok(terminal::start(
+    let started = terminal::start(
         on_output,
         state.store.clone(),
         state.terminals.clone(),
         request,
         operation_id.as_deref(),
-    )?)
+    )?;
+    desktop_windows::own(&app, window.label(), &started.session_id)?;
+    Ok(started)
 }
 
 #[tauri::command]
 fn start_local_terminal(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
     state: State<'_, AppState>,
     request: LocalTerminalRequest,
     on_output: pty_output::OutputChannel,
 ) -> Result<TerminalStarted, AppError> {
-    Ok(local_pty::start(
+    let started = local_pty::start(
         on_output,
         state.terminals.clone(),
         request,
-    )?)
-}
-
-/// Local tabs, layout and scrollback saved by the frontend (window-save-state).
-fn session_path(app: &AppHandle) -> Result<PathBuf, String> {
-    app.path()
-        .app_local_data_dir()
-        .map(|dir| dir.join("session.json"))
-        .map_err(|error| format!("Could not find the data directory: {error}"))
+    )?;
+    desktop_windows::own(&app, window.label(), &started.session_id)?;
+    Ok(started)
 }
 
 #[tauri::command(async)]
-fn save_session(app: AppHandle, contents: String) -> Result<(), AppError> {
-    let path = session_path(&app)?;
-    // Write a temporary file and rename it, so a crash never leaves half a session.
-    let temporary = path.with_extension("json.tmp");
-    std::fs::write(&temporary, contents)
-        .and_then(|()| std::fs::rename(&temporary, &path))
-        .map_err(|error| format!("Could not save the session: {error}"))?;
-    Ok(())
+fn save_session(app: AppHandle, window: tauri::WebviewWindow, contents: String) -> Result<(), AppError> {
+    let _: serde_json::Value = serde_json::from_str(&contents).map_err(|_| "Invalid session data".to_string())?;
+    Ok(layout_files::private_write(&desktop_windows::session_path(&app, window.label())?, contents.as_bytes())?)
 }
 
 #[tauri::command(async)]
-fn load_session(app: AppHandle) -> Result<Option<String>, AppError> {
-    let path = session_path(&app)?;
-    Ok(std::fs::read_to_string(path).ok())
+fn load_session(app: AppHandle, window: tauri::WebviewWindow) -> Result<Option<String>, AppError> {
+    let path = desktop_windows::session_path(&app, window.label())?;
+    if !path.exists() { return Ok(None); }
+    Ok(Some(layout_files::read(&path)?))
 }
+
+fn workspace_directory(app: &AppHandle) -> Result<PathBuf, String> {
+    app.path().app_local_data_dir().map(|p| p.join("workspaces")).map_err(|e| e.to_string())
+}
+#[tauri::command(async)]
+fn list_workspaces(app: AppHandle) -> Result<layout_files::WorkspaceList, AppError> { Ok(layout_files::list(&workspace_directory(&app)?)?) }
+#[tauri::command(async)]
+fn save_workspace(app: AppHandle, id: Option<String>, name: String, layout: serde_json::Value) -> Result<layout_files::WorkspaceFile, AppError> { Ok(layout_files::save(&workspace_directory(&app)?, id.as_deref(), &name, layout)?) }
+#[tauri::command(async)]
+fn load_workspace(app: AppHandle, id: String) -> Result<layout_files::WorkspaceFile, AppError> { Ok(layout_files::load(&workspace_directory(&app)?, &id)?) }
+#[tauri::command(async)]
+fn delete_workspace(app: AppHandle, id: String) -> Result<(), AppError> { Ok(layout_files::remove(&workspace_directory(&app)?, &id)?) }
+#[tauri::command]
+fn new_workspace_window(app: AppHandle, layout_id: Option<String>) -> Result<String, AppError> {
+    if let Some(id) = &layout_id { layout_files::load(&workspace_directory(&app)?, id)?; }
+    Ok(desktop_windows::new_window(&app, layout_id.as_deref())?)
+}
+#[tauri::command]
+fn set_window_restore(app: AppHandle, window: tauri::WebviewWindow, enabled: bool) -> Result<(), AppError> {
+    Ok(desktop_windows::set_restore(&app, window.label(), enabled)?)
+}
+#[tauri::command]
+fn pending_quit(app: AppHandle, window: tauri::WebviewWindow) -> Option<String> { desktop_windows::pending_quit(&app, window.label()) }
+#[tauri::command]
+fn acknowledge_quit(app: AppHandle, window: tauri::WebviewWindow, token: String, ready: bool) -> Result<(), AppError> { Ok(desktop_windows::acknowledge_quit(&app, window.label(), &token, ready)?) }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -1768,7 +1794,7 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             if argv.iter().any(|argument| argument == quick::TOGGLE_FLAG) {
                 quick::toggle(app);
-            } else if let Some(window) = app.get_webview_window("main") {
+            } else if let Some(window) = desktop_windows::focused(app) {
                 let _ = window.show();
                 let _ = window.unminimize();
                 let _ = window.set_focus();
@@ -1830,9 +1856,7 @@ pub fn run() {
             app.set_menu(menu)?;
             app.on_menu_event(|app, event| {
                 if event.id().as_ref() == "quit-ternway" {
-                    if let Some(window) = app.get_webview_window("main") {
-                        let _ = window.close();
-                    }
+                    let _ = desktop_windows::request_quit(app);
                     return;
                 }
                 let event_name = match event.id().as_ref() {
@@ -1840,7 +1864,7 @@ pub fn run() {
                     "check-updates" => "check-updates",
                     _ => return,
                 };
-                if let Some(window) = app.get_webview_window("main") {
+                if let Some(window) = desktop_windows::focused(app) {
                     let _ = window.show();
                     let _ = window.unminimize();
                     let _ = window.set_focus();
@@ -1853,6 +1877,7 @@ pub fn run() {
             }
             let state = AppState::open(data_dir).map_err(std::io::Error::other)?;
             app.manage(state);
+            desktop_windows::setup(app.handle()).map_err(std::io::Error::other)?;
             // `ternway --toggle-quick` as the first launch opens only the quick terminal.
             let quick_only = std::env::args().any(|argument| argument == quick::TOGGLE_FLAG);
             if let Some(window) = app.get_webview_window("main") {
@@ -1860,14 +1885,6 @@ pub fn run() {
                 if !quick_only {
                     window.show()?;
                 }
-                // Closing the main window quits, quick terminal included; a hidden quick window
-                // must not keep the app running unseen.
-                let handle = app.handle().clone();
-                window.on_window_event(move |event| {
-                    if let tauri::WindowEvent::Destroyed = event {
-                        handle.exit(0);
-                    }
-                });
             }
             if quick_only {
                 quick::toggle(app.handle());
@@ -1961,6 +1978,14 @@ pub fn run() {
             load_config,
             save_session,
             load_session,
+            list_workspaces,
+            save_workspace,
+            load_workspace,
+            delete_workspace,
+            new_workspace_window,
+            acknowledge_quit,
+            pending_quit,
+            set_window_restore,
             start_remote_edit,
             configure_quick_terminal,
             toggle_quick_terminal,
@@ -1976,18 +2001,17 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building ternway application")
         .run(|app, event| {
-            if matches!(event, tauri::RunEvent::Exit) { openssh_pool::stop_all(); }
+            if matches!(event, tauri::RunEvent::Exit) {
+                let state = app.state::<AppState>();
+                terminal::close_all(&state.terminals);
+                log_stream::close_all(&state.log_streams);
+                tunnels::stop_all();
+                ssh::disconnect_all();
+            }
             if let tauri::RunEvent::ExitRequested { code, api, .. } = event {
-                // Native Quit must await the same session save as closing the main window.
-                // Restarts use a distinct exit code and save from the updater before relaunch.
-                if matches!(code, None | Some(0)) {
-                    if let Some(window) = app.get_webview_window("main") {
-                        api.prevent_exit();
-                        if let Err(error) = window.close() {
-                            eprintln!("Could not close Ternway: {error}");
-                            app.exit(1);
-                        }
-                    }
+                if matches!(code, None | Some(0)) && !app.state::<desktop_windows::DesktopWindows>().allow_exit.load(std::sync::atomic::Ordering::SeqCst) {
+                    api.prevent_exit();
+                    if let Err(error) = desktop_windows::request_quit(app) { eprintln!("Could not prepare to quit Ternway: {error}"); }
                 }
             }
         });

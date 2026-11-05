@@ -1,3 +1,5 @@
+import { parseSavedLayout, type SavedPane, type SavedSession } from "./saved-layout";
+export type { SavedPane, SavedSession } from "./saved-layout";
 import { freshSessionRequest } from "./connection-lifecycle";
 import { invoke } from "@tauri-apps/api/core";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
@@ -13,7 +15,7 @@ import { openPicker, type PaletteItem } from "./palette";
 import { layoutPanes, leaf, leaves, mapLeaves, MIN_RATIO, neighbor, removeLeaf, replaceLeaf, splitLeaf, type Divider, type FocusDirection, type PaneNode, type Rect, type SplitDirection } from "./panes";
 import { render } from "./render";
 import { cancelCurrentOperation, invokeCommand, setError } from "./session";
-import { activeDock, activeTerminalGroup, activeTerminalGroups, activeTerminalTabByWorkspace, connectedServerIds, dockShown, isLocalWorkspace, LOCAL_SERVER_ID, LOCAL_WORKSPACE_ID, root, state, terminalDocks, terminalGroupOf, terminalInputChains, terminalSurfaces, useWebglRenderer } from "./state";
+import { activeDock, activeTerminalGroup, activeTerminalGroups, activeTerminalTabByWorkspace, connectedServerIds, dockShown, isLocalWorkspace, LOCAL_SERVER_ID, LOCAL_WORKSPACE_ID, root, serverTabViews, state, terminalDocks, terminalGroupOf, terminalInputChains, terminalSurfaces, useWebglRenderer } from "./state";
 import { TerminalSurface, type TerminalAppearance } from "./terminal-surface";
 import { showToast } from "./toasts";
 import { loadTerminalConfig, profileConfig, profileForServer, terminalAppearance } from "./terminal-config";
@@ -59,7 +61,7 @@ export function createTerminalSurface(tab: TerminalTab): TerminalSurface {
     onFinished: (command, seconds) => notifyCommandFinished(tab, command.exitCode ?? 0, seconds),
     onInput: (data) => {
       // After the process exits, any key closes the pane (Ghostty's wait-after-command).
-      if (tab.closed) { if (!tab.connecting && tab.serverId === LOCAL_SERVER_ID) void closeTerminal(tab.id); return; }
+      if (tab.closed) { if (tab.phase !== "dormant" && !tab.connecting && tab.serverId === LOCAL_SERVER_ID) void closeTerminal(tab.id); return; }
       const group = terminalGroupOf(tab.id);
       if (group?.broadcast) {
         for (const id of leaves(group.root)) {
@@ -163,7 +165,6 @@ export function disposeTerminalSurfaces(tabs: TerminalTab[]): void {
     surface?.dispose();
     terminalSurfaces.delete(tab.id);
     appliedAppearances.delete(tab.id);
-    pendingStarts.delete(tab.id);
     finishRemoteEdit(tab);
     if (tab.sessionId) terminalInputChains.delete(tab.sessionId);
     const group = state.terminalGroups.find((item) => item.id === tab.groupId);
@@ -306,12 +307,9 @@ async function openTerminal(placement: Placement, command?: string, title?: stri
     }
   };
   if (placement.kind === "restore") {
-    // Start the shell once the pane is shown and fitted, so it starts at its real size.
-    pendingStarts.set(id, () => {
-      localRequest.cols = surface.cols;
-      localRequest.rows = surface.rows;
-      void startSession();
-    });
+    tab.phase = "dormant"; tab.closed = true; tab.connecting = false; tab.sessionId = undefined;
+    tab.cwd = placement.pane.cwd;
+    surface.notice("Saved layout. This is historical output; start the session when ready.");
     return;
   }
   state.activeTerminalTabId = id;
@@ -402,51 +400,55 @@ export function setTerminalRenderer(renderer: TerminalRenderer): void {
 
 const SNAPSHOT_LINES = 1000;
 
-export interface SavedPane { cwd?: string; profile?: string; snapshot?: string }
-
-export interface SavedSession {
-  version: 1;
-  activeGroup: number;
-  groups: { title: string; customTitle?: boolean; root: PaneNode; focusedId: string; panes: Record<string, SavedPane> }[];
-}
-
-/** Local tabs with their layout, directories, profiles and recent scrollback. */
+/** Layouts hold session metadata and optional historical output, never commands or credentials. */
 export function snapshotSession(): SavedSession {
   const groups: SavedSession["groups"] = [];
   let activeGroup = 0;
-  const focusedLocal = isLocalWorkspace() ? state.activeTerminalTabId : activeTerminalTabByWorkspace.get(LOCAL_WORKSPACE_ID);
-  for (const group of state.terminalGroups.filter((item) => item.workspaceTabId === LOCAL_WORKSPACE_ID)) {
-    let root: PaneNode | null = group.root;
+  for (const group of state.terminalGroups) {
+    let root: PaneNode | null = structuredClone(group.root);
     const panes: Record<string, SavedPane> = {};
     for (const id of leaves(group.root)) {
-      const tab = state.terminalTabs.find((item) => item.id === id);
-      // Editor panes for remote files end with their edit session.
-      if (!tab || tab.remoteEditId || tab.serverId !== LOCAL_SERVER_ID) { root = root && removeLeaf(structuredClone(root), id); continue; }
+      const tab = state.terminalTabs.find(item => item.id === id);
+      if (!tab || tab.remoteEditId) { root = root && removeLeaf(root, id); continue; }
       panes[id] = { cwd: tab.cwd, profile: tab.profile, snapshot: terminalSurfaces.get(id)?.snapshot(SNAPSHOT_LINES) };
     }
     if (!root) continue;
-    if (focusedLocal && leaves(group.root).includes(focusedLocal)) activeGroup = groups.length;
-    groups.push({ title: group.title, customTitle: group.customTitle, root, focusedId: panes[group.focusedId] ? group.focusedId : leaves(root)[0], panes });
+    if (state.activeTerminalTabId && leaves(root).includes(state.activeTerminalTabId)) activeGroup = groups.length;
+    groups.push({ workspace: group.workspaceTabId, title: group.title, customTitle: group.customTitle, root, focusedId: panes[group.focusedId] ? group.focusedId : leaves(root)[0], panes });
   }
-  return { version: 1, activeGroup, groups };
+  return { version: 2, activeGroup, activeWorkspace: state.activeWorkspaceTabId ?? LOCAL_WORKSPACE_ID, workspaces: state.openServerTabs.map(tab => ({ ...tab })), groups };
 }
 
-/** Reopens saved local tabs: same layout and directories, with their scrollback shown above. */
-export async function restoreSession(saved: SavedSession): Promise<void> {
-  if (saved.version !== 1 || !Array.isArray(saved.groups)) return;
-  const restored: TerminalGroup[] = [];
-  for (const savedGroup of saved.groups) {
-    const ids = new Map<string, string>();
-    const root = mapLeaves(savedGroup.root, (oldId) => { const id = crypto.randomUUID(); ids.set(oldId, id); return id; });
-    const group: TerminalGroup = { id: crypto.randomUUID(), workspaceTabId: LOCAL_WORKSPACE_ID, title: savedGroup.title, customTitle: savedGroup.customTitle, root, focusedId: ids.get(savedGroup.focusedId) ?? leaves(root)[0], zoomed: false };
-    state.terminalGroups.push(group);
-    restored.push(group);
-    for (const [oldId, id] of ids) {
-      await openTerminal({ kind: "restore", group, id, pane: savedGroup.panes[oldId] ?? {} });
-    }
+/** Restore only dormant panes. Starting any local/remote process requires an explicit action. */
+export async function restoreSession(value: unknown): Promise<void> {
+  const saved = parseSavedLayout(value);
+  const workspaceIds = new Map<string, string>([[LOCAL_WORKSPACE_ID, LOCAL_WORKSPACE_ID]]);
+  for (const old of saved.workspaces ?? []) {
+    if (!state.snapshot.servers.some(server => server.id === old.serverId)) continue;
+    const tab = { id: crypto.randomUUID(), serverId: old.serverId, label: old.label };
+    state.openServerTabs.push(tab); workspaceIds.set(old.id, tab.id); serverTabViews.set(tab.id, "terminal");
   }
-  const active = restored[saved.activeGroup] ?? restored.at(-1);
-  if (active) activeTerminalTabByWorkspace.set(LOCAL_WORKSPACE_ID, active.focusedId);
+  const restored: TerminalGroup[] = [];
+  const originalWorkspace = state.activeWorkspaceTabId;
+  const originalServer = state.activeServerId;
+  for (const savedGroup of saved.groups) {
+    const workspaceTabId = workspaceIds.get(savedGroup.workspace ?? LOCAL_WORKSPACE_ID);
+    if (!workspaceTabId) continue;
+    state.activeWorkspaceTabId = workspaceTabId;
+    state.activeServerId = state.openServerTabs.find(tab => tab.id === workspaceTabId)?.serverId ?? null;
+    const ids = new Map<string, string>();
+    const root = mapLeaves(savedGroup.root, oldId => { const id = crypto.randomUUID(); ids.set(oldId, id); return id; });
+    const group: TerminalGroup = { id: crypto.randomUUID(), workspaceTabId, title: savedGroup.title, customTitle: savedGroup.customTitle, root, focusedId: ids.get(savedGroup.focusedId) ?? leaves(root)[0], zoomed: false };
+    state.terminalGroups.push(group); restored.push(group);
+    for (const [oldId, id] of ids) await openTerminal({ kind: "restore", group, id, pane: savedGroup.panes[oldId] ?? {} });
+    activeTerminalTabByWorkspace.set(workspaceTabId, group.focusedId);
+  }
+  state.activeWorkspaceTabId = workspaceIds.get(saved.activeWorkspace ?? LOCAL_WORKSPACE_ID) ?? originalWorkspace ?? LOCAL_WORKSPACE_ID;
+  state.activeServerId = state.openServerTabs.find(tab => tab.id === state.activeWorkspaceTabId)?.serverId ?? (state.activeWorkspaceTabId === LOCAL_WORKSPACE_ID ? null : originalServer);
+  const active = restored[saved.activeGroup];
+  if (active?.workspaceTabId === state.activeWorkspaceTabId) activeTerminalTabByWorkspace.set(active.workspaceTabId, active.focusedId);
+  state.activeTerminalTabId = activeTerminalTabByWorkspace.get(state.activeWorkspaceTabId) ?? null;
+  state.activeView = "terminal";
 }
 
 // --- Terminal layer ---------------------------------------------------------------------------
@@ -466,8 +468,6 @@ terminalLayer.append(layerInner);
 document.body.append(terminalLayer);
 
 const shownSurfaces = new Set<TerminalSurface>();
-/** Restored panes whose shell starts when they are first laid out. */
-const pendingStarts = new Map<string, () => void>();
 let lastPaneRects = new Map<string, Rect>();
 let dividerElements: HTMLElement[] = [];
 /** Current layout data for each divider element; elements are reused so a drag keeps its pointer capture. */
@@ -577,17 +577,6 @@ function layoutPanesInLayer(): Map<string, Rect> {
   });
   lastPaneRects = layout.panes;
   positionSearchBar();
-  const starting = [...layout.panes.keys()].filter((id) => pendingStarts.has(id));
-  if (starting.length) {
-    // Two frames: one for the resize observer to see the new size, one for the fit.
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      for (const id of starting) {
-        const start = pendingStarts.get(id);
-        pendingStarts.delete(id);
-        start?.();
-      }
-    }));
-  }
   updateSurroundings();
   return layout.panes;
 }
@@ -840,6 +829,7 @@ function showCompletions(surface: TerminalSurface, tab: TerminalTab): void {
 
 /** Runs a keybinding action. Returns false when it does not apply right now. */
 export function runTerminalAction(action: KeyAction): boolean {
+  if (action === "new_window") { void invoke("new_workspace_window", { layoutId: null }).catch(setError); return true; }
   if (action === "toggle_quick_terminal") {
     void invoke("toggle_quick_terminal");
     return true;

@@ -1,3 +1,4 @@
+import { openWorkspaceLibrary, saveWorkspaceLayout, openSavedWorkspace, deleteSavedWorkspace } from "./workspace-library";
 import { loadAboutMetadata, aboutBuildSummary } from "./about";
 import { BRAND } from "./brand";
 import { importedDraft, linkedDraft, renderImportChoices } from "./ssh-import";
@@ -326,6 +327,11 @@ export async function runAction(action: string, target: HTMLElement = document.c
     case "change-master-password": state.credentialSettingsError = ""; state.credentialSettingsNotice = ""; state.modal = "change-password"; render(); break;
     case "reset-credentials": state.credentialSettingsError = ""; state.credentialSettingsNotice = ""; state.modal = "reset-credentials"; render(); break;
     case "connect": await setView("dashboard"); break;
+    case "workspace-library": await openWorkspaceLibrary(); break;
+    case "save-workspace-layout": await saveWorkspaceLayout(); break;
+    case "open-saved-workspace": if (target.dataset.workspaceId) await openSavedWorkspace(target.dataset.workspaceId); break;
+    case "delete-saved-workspace": if (target.dataset.workspaceId) await deleteSavedWorkspace(target.dataset.workspaceId); break;
+    case "new-workspace-window": await invoke("new_workspace_window", { layoutId: null }); break;
     case "close-modal": closeModal(); break;
     case "accept-app-dialog": finishAppDialog(true); break;
     case "cancel-app-dialog": finishAppDialog(false); break;

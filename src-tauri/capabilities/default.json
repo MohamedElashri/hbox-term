@@ -4,7 +4,8 @@
   "description": "Main window capabilities for ternway",
   "windows": [
     "main",
-    "quick"
+    "quick",
+    "workspace-*"
   ],
   "permissions": [
     "core:default",

@@ -1,3 +1,4 @@
+import { cancelCurrentOperation } from "./app/session";
 import { watchSharedSsh } from "./app/shared-ssh";
 import { rememberGroup } from "./app/connection-groups";
 import { closeCustomSelects } from "./app/select-controls";
@@ -28,7 +29,23 @@ import { confirm } from "./app/modals";
 import "./styles.css";
 import type { CredentialStatus, TerminalEvent, TransferProgress } from "./types";
 
+let finishBootstrap: () => void;
+const windowReady = new Promise<void>(resolve => { finishBootstrap = resolve; });
+let bootstrapSucceeded = false;
+async function prepareQuit(token: string): Promise<void> {
+  await windowReady;
+  cancelCurrentOperation();
+  let ready = false;
+  try { if (!quickMode && bootstrapSucceeded) await saveSession(); ready = true; }
+  catch (error) { showToast(`Could not save the workspace: ${errorText(error)}`, "info"); }
+  await invoke("acknowledge_quit", { token, ready });
+}
+
 async function installEventListeners(): Promise<void> {
+  state.terminalUnlisteners.push(await listen<string>("prepare-quit", event => { void prepareQuit(event.payload); }));
+  // Quit can be requested before this webview has installed its event listener.
+  const pending = await invoke<string | null>("pending_quit");
+  if (pending) void prepareQuit(pending);
   state.terminalUnlisteners.push(await listen("show-about", () => { void runAction("show-about"); }));
   state.terminalUnlisteners.push(await listen("check-updates", () => { void runAction("check-updates"); }));
   state.terminalUnlisteners.push(await listen<TerminalEvent>("log-stream-output", (event) => {
@@ -154,27 +171,37 @@ window.addEventListener("keydown", (event) => {
 
 const SESSION_SAVE_INTERVAL_MS = 30_000;
 
-async function restoreSavedSession(): Promise<void> {
-  if (!sessionSavingEnabled()) return;
+async function restoreSavedSession(): Promise<boolean> {
+  const layoutId = new URLSearchParams(window.location.search).get("layout");
+  if (!layoutId && !sessionSavingEnabled()) return false;
   try {
+    if (layoutId) {
+      const saved = await invoke<{layout: unknown}>("load_workspace", { id: layoutId });
+      await restoreSession(saved.layout); return true;
+    }
     const saved = await invoke<string | null>("load_session");
-    if (saved) await restoreSession(JSON.parse(saved) as SavedSession);
+    if (saved) { await restoreSession(JSON.parse(saved) as SavedSession); return true; }
   } catch (error) {
-    console.warn("Could not restore the previous session", error);
+    state.activeWorkspaceTabId = "local"; state.activeView = "terminal";
+    state.errorMessage = `Could not restore the workspace: ${errorText(error)}`;
+    return true; // A damaged layout must not turn into an automatic command launch.
   }
+  return false;
 }
 
 /** Saves local tabs periodically (so a crash loses little) and when the window closes. */
 function startSessionSaving(): void {
   window.setInterval(() => {
-    void saveSession().catch(error => showToast(`Could not save local tabs: ${errorText(error)}`, "info"));
+    void saveSession().catch(error => showToast(`Could not save the workspace: ${errorText(error)}`, "info"));
   }, SESSION_SAVE_INTERVAL_MS);
   void appWindow.onCloseRequested(async event => {
+    cancelCurrentOperation();
     try {
       await saveSession();
+      await Promise.all(state.terminalTabs.filter(tab => tab.sessionId).map(tab => invoke("close_terminal", { sessionId: tab.sessionId }).catch(() => undefined)));
     } catch (error) {
       event.preventDefault();
-      if (await confirm(`Your local tabs could not be saved. Quit without saving them?\n${errorText(error)}`, { title: "Session could not be saved", kind: "warning", confirmLabel: "Quit without saving" })) await appWindow.destroy();
+      if (await confirm(`This window’s layout could not be saved. Close without saving it?\n${errorText(error)}`, { title: "Session could not be saved", kind: "warning", confirmLabel: "Close without saving" })) await appWindow.destroy();
     }
   });
 }
@@ -191,13 +218,15 @@ async function bootstrap(): Promise<void> {
     // Load the config first so the first shell already uses it, and the bundled font (Ghostty's
     // default, not installed on macOS) before xterm.js measures its cell size.
     await loadTerminalConfig();
+    if (!quickMode) await invoke("set_window_restore", { enabled: sessionSavingEnabled() });
     await Promise.all(["400", "700"].map((weight) => document.fonts.load(`${weight} 16px "JetBrains Mono"`))).catch(() => undefined);
-    if (!quickMode) await restoreSavedSession();
-    await selectLocalWorkspace();
+    const restored = !quickMode && await restoreSavedSession();
+    if (restored) render(); else await selectLocalWorkspace();
     if (!quickMode) startSessionSaving();
+    bootstrapSucceeded = true;
   } catch (error) {
     state.loading = false; state.errorMessage = errorText(error); render();
-  }
+  } finally { finishBootstrap(); }
 }
 
 void bootstrap();

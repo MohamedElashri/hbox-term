@@ -455,6 +455,17 @@ pub fn close_server(sessions: &TerminalSessions, server_id: &str) {
 }
 
 /// Closes every SSH session. Local shells do not depend on the credential vault and stay open.
+pub fn close_all(sessions: &TerminalSessions) {
+    let closing: Vec<_> = sessions
+        .lock()
+        .map(|mut sessions| sessions.drain().map(|(_, session)| session).collect())
+        .unwrap_or_default();
+    for session in closing {
+        session.unacked.stop();
+        let _ = session.sender.send(TerminalCommand::Close);
+    }
+}
+
 pub fn close_remote(sessions: &TerminalSessions) {
     let senders = sessions
         .lock()

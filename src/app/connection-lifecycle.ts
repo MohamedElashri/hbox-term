@@ -1,7 +1,7 @@
-export type ConnectionPhase = "launching" | "authenticating" | "interactive" | "ready" | "disconnected" | "failed" | "cancelled";
+export type ConnectionPhase = "dormant" | "launching" | "authenticating" | "interactive" | "ready" | "disconnected" | "failed" | "cancelled";
 
 export const phaseLabels: Record<ConnectionPhase, string> = {
-  launching: "Opening session…", authenticating: "Authenticate in terminal…",
+  dormant: "Saved layout · session not started", launching: "Opening session…", authenticating: "Authenticate in terminal…",
   interactive: "OpenSSH running · authentication unverified", ready: "Connected",
   disconnected: "Disconnected · reconnect to start a fresh session", failed: "Connection failed",
   cancelled: "Cancelled",
@@ -9,7 +9,7 @@ export const phaseLabels: Record<ConnectionPhase, string> = {
 
 /** Health checks observe only. They never reconnect, send input or revive an exited pane. */
 export function phaseAfterHealth(current: ConnectionPhase, running: boolean, native: boolean, shared: boolean, ready: boolean): ConnectionPhase {
-  if (["launching", "disconnected", "failed", "cancelled"].includes(current)) return current;
+  if (["dormant", "launching", "disconnected", "failed", "cancelled"].includes(current)) return current;
   if (!running) return "disconnected";
   if (!native) return "ready";
   if (!shared) return "interactive";

@@ -51,7 +51,7 @@ export function renderTerminal(): string {
   const server = activeServer();
   const linked = server?.authMethod === "openSsh";
   const label = linked ? server.openSsh?.alias || server.host : `${server?.username ?? "user"}@${server?.host ?? "server"}`;
-  return `<section class="terminal-workspace">${renderTabStrip()}${current ? `<div class="terminal-meta"><span>${icon("terminalSmall")} ${escapeHtml(label)}</span><span>${escapeHtml(phaseLabels[current.phase ?? (current.closed ? "disconnected" : current.connecting ? "launching" : "ready")])}</span>${current.closed ? `<button class="text-button" data-action="reconnect-terminal">${icon("restart")} Reconnect</button>` : ""}<button class="text-button" data-action="clear-terminal">Clear ${icon("close")}</button></div><div class="terminal-surface" data-terminal-surface="${current.id}"></div>` : `<div class="terminal-empty"><div class="terminal-empty-art">${icon("terminal")}</div><h2>${linked ? "Open an OpenSSH session." : "Open a terminal."}</h2><p>${linked ? "Your SSH configuration is read each time you connect." : "Connect to start an interactive shell."}</p><button class="button button-primary" data-action="new-terminal">${icon("terminalSmall")} Open terminal</button></div>`}</section>`;
+  return `<section class="terminal-workspace">${renderTabStrip()}${current ? `<div class="terminal-meta"><span>${icon("terminalSmall")} ${escapeHtml(label)}</span><span>${escapeHtml(phaseLabels[current.phase ?? (current.closed ? "disconnected" : current.connecting ? "launching" : "ready")])}</span>${current.closed ? `<button class="text-button" data-action="reconnect-terminal">${icon("restart")} ${current.phase === "dormant" ? "Start session" : "Reconnect"}</button>` : ""}<button class="text-button" data-action="clear-terminal">Clear ${icon("close")}</button></div><div class="terminal-surface" data-terminal-surface="${current.id}"></div>` : `<div class="terminal-empty"><div class="terminal-empty-art">${icon("terminal")}</div><h2>${linked ? "Open an OpenSSH session." : "Open a terminal."}</h2><p>${linked ? "Your SSH configuration is read each time you connect." : "Connect to start an interactive shell."}</p><button class="button button-primary" data-action="new-terminal">${icon("terminalSmall")} Open terminal</button></div>`}</section>`;
 }
 
 /**
@@ -64,7 +64,7 @@ export function renderTabStrip(controls = ""): string {
   const tabs = groups.map((group) => {
     const title = groupTitle(group);
     const active = group === activeGroup;
-    return `<div class="term-tab ${active ? "active" : ""}" role="tab" aria-selected="${active}" data-terminal-tab="${escapeHtml(group.focusedId)}" data-tab-group="${escapeHtml(group.id)}" title="${escapeHtml(title)}"><span class="term-tab-dot ${groupExited(group) ? "closed" : ""}"></span><span class="term-tab-title">${escapeHtml(title)}</span>${paneCount(group)}<button class="term-tab-close" data-terminal-close="${escapeHtml(group.id)}" aria-label="Close ${escapeHtml(title)}">${icon("close")}</button></div>`;
+    return `<div class="term-tab ${active ? "active" : ""}" role="tab" aria-selected="${active}" data-terminal-tab="${escapeHtml(group.focusedId)}" data-tab-group="${escapeHtml(group.id)}" title="${escapeHtml(title)}"><span class="term-tab-dot ${leaves(group.root).every(id => state.terminalTabs.find(tab => tab.id === id)?.phase === "dormant") ? "saved" : groupExited(group) ? "closed" : ""}"></span><span class="term-tab-title">${escapeHtml(title)}</span>${paneCount(group)}<button class="term-tab-close" data-terminal-close="${escapeHtml(group.id)}" aria-label="Close ${escapeHtml(title)}">${icon("close")}</button></div>`;
   }).join("");
   return `<div class="tab-strip" role="tablist" aria-label="Terminal tabs">${tabs}<button class="term-tab-new" data-action="new-terminal" title="New tab" aria-label="New tab">${icon("plus")}</button>${controls ? `<span class="tab-strip-controls">${controls}</span>` : ""}</div>`;
 }
@@ -80,7 +80,8 @@ export function paneCount(group: TerminalGroup): string {
 
 /** Local shells fill the content area below their tab strip. */
 function renderLocalTerminal(): string {
-  return `<section class="terminal-workspace terminal-workspace-local">${renderTabStrip()}<div class="terminal-surface" data-terminal-surface></div></section>`;
+  const current = state.terminalTabs.find(tab => tab.id === state.activeTerminalTabId);
+  return `<section class="terminal-workspace terminal-workspace-local">${renderTabStrip()}${current?.phase === "dormant" ? `<div class="terminal-meta"><span>Saved layout · historical output</span><button class="text-button" data-action="reconnect-terminal">Start session</button></div>` : ""}<div class="terminal-surface" data-terminal-surface></div></section>`;
 }
 
 export function renderProcesses(): string {

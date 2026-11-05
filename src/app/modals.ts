@@ -1,3 +1,4 @@
+import { workspaceLibraryContent } from "./workspace-library";
 import { renderAboutContent } from "./about";
 import { icon } from "../icons";
 import type { ServerProfile } from "../types";
@@ -41,6 +42,7 @@ export function finishAppDialog(value: boolean): void {
 }
 
 export function renderModal(): string {
+  if (state.modal === "workspaces") return renderModalShell("Workspaces", "Saved connections and terminal layouts for each project.", workspaceLibraryContent(), "modal-workspaces");
   if (state.modal === "server") return renderServerModal();
   if (state.modal === "workspace-tab-rename") return renderWorkspaceTabRenameModal();
   if (state.modal === "service") return renderServiceModal();
