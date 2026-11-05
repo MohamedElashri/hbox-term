@@ -171,8 +171,8 @@ impl AppState {
     fn open(data_path: PathBuf) -> Result<Self, String> {
         Ok(Self {
             store: storage::Store::open(
-                &data_path.join("hbox-term.sqlite3"),
-                &data_path.join("hbox-term.credentials"),
+                &data_path.join("ternway.sqlite3"),
+                &data_path.join("ternway.credentials"),
             )?,
             terminals: Arc::new(Mutex::new(HashMap::new())),
             log_streams: Arc::new(Mutex::new(HashMap::new())),
@@ -1363,7 +1363,7 @@ fn free_local_port(preferred: u16) -> Result<u16, AppError> {
 static QUICK_SHORTCUT: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 
 /// Applies the quick terminal settings and (re)registers its global hotkey. Fails when the
-/// desktop does not allow global hotkeys (GNOME on Wayland); `hbox-term --toggle-quick` works there.
+/// desktop does not allow global hotkeys (GNOME on Wayland); `ternway --toggle-quick` works there.
 #[tauri::command]
 fn configure_quick_terminal(
     app: AppHandle,
@@ -1745,11 +1745,11 @@ pub fn run() {
             });
             let data_dir = app.path().app_local_data_dir()?;
             if let Err(error) = local_pty::install_shell_integration(&data_dir) {
-                eprintln!("hbox-term shell integration unavailable: {error}");
+                eprintln!("ternway shell integration unavailable: {error}");
             }
             let state = AppState::open(data_dir).map_err(std::io::Error::other)?;
             app.manage(state);
-            // `hbox-term --toggle-quick` as the first launch opens only the quick terminal.
+            // `ternway --toggle-quick` as the first launch opens only the quick terminal.
             let quick_only = std::env::args().any(|argument| argument == quick::TOGGLE_FLAG);
             if let Some(window) = app.get_webview_window("main") {
                 fit_initial_window_to_work_area(&window);
@@ -1867,5 +1867,5 @@ pub fn run() {
             close_terminal
         ])
         .run(tauri::generate_context!())
-        .expect("error while running hbox-term application");
+        .expect("error while running ternway application");
 }

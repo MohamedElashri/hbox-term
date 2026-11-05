@@ -6,7 +6,7 @@ use crate::storage::Store;
 use std::collections::HashMap;
 use std::time::Duration;
 
-const DISK_SECTION_MARKER: &str = "__HBOX_TERM_DISK_V1__";
+const DISK_SECTION_MARKER: &str = "__TERNWAY_DISK_V1__";
 /// Disk scans are verbose by nature, but the bounded script keeps the real
 /// output far below this; the cap only stops a misbehaving host from growing
 /// buffers without end.
@@ -27,7 +27,7 @@ const DISK_SCAN_IDLE_TIMEOUT: Duration = Duration::from_secs(150);
 //   `ls -dn` (no modified times).
 // - `du` depth flags differ across implementations, so directory depth is
 //   limited after the fact in awk — du must walk everything anyway.
-const DISK_SCAN_SCRIPT: &str = r#"marker() { printf '\n__HBOX_TERM_DISK_V1__%s\n' "$1"; }
+const DISK_SCAN_SCRIPT: &str = r#"marker() { printf '\n__TERNWAY_DISK_V1__%s\n' "$1"; }
 guard=''
 command -v timeout >/dev/null 2>&1 && guard='timeout 25'
 deadline=$(( $(date +%s 2>/dev/null || echo 0) + 120 ))

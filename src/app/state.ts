@@ -49,9 +49,9 @@ export interface LoadedTerminalConfig extends ResolvedProfile {
 }
 
 export type TerminalRenderer = "auto" | "webgl" | "dom";
-const storedRenderer = localStorage.getItem("hbox-term-renderer");
+const storedRenderer = localStorage.getItem("ternway-renderer");
 
-const storedInterfaceScale = Number(localStorage.getItem("hbox-term-interface-scale"));
+const storedInterfaceScale = Number(localStorage.getItem("ternway-interface-scale"));
 
 /** Mutable application state shared by every module. */
 export class AppState {
@@ -65,7 +65,7 @@ export class AppState {
   sidebarCopyPlacement: { sourceId: string; copyId: string } | null = null;
   activeView: View = "dashboard";
   serverQuery = "";
-  darkMode = localStorage.getItem("hbox-term-theme") !== "light";
+  darkMode = localStorage.getItem("ternway-theme") !== "light";
   loading = true;
   errorMessage = "";
   modal: ModalKind = null;

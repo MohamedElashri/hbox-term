@@ -380,7 +380,7 @@ impl SshClient {
 
     pub fn disconnect(&self) -> Result<(), String> {
         self.session
-            .disconnect(None, "Disconnected by hbox-term", None)
+            .disconnect(None, "Disconnected by ternway", None)
             .map_err(|error| format!("Could not disconnect SSH session: {error}"))
     }
 }
@@ -463,7 +463,7 @@ fn jump_stream(
         .map_err(|error| format!("Could not prepare the bastion relay: {error}"))?;
     thread::spawn(move || {
         if let Err(error) = relay_jump(&mut jump_client, channel, relay, cancellation.as_ref()) {
-            eprintln!("hbox-term bastion relay closed: {error}");
+            eprintln!("ternway bastion relay closed: {error}");
         }
     });
     Ok(transport)
@@ -831,7 +831,7 @@ fn append_known_host_line(profile: &ServerProfile, key: &[u8]) -> Result<(), Str
     } else {
         format!("[{}]:{}", profile.host, profile.port)
     };
-    let line = format!("{host} {algorithm} {encoded} added by hbox-term\n");
+    let line = format!("{host} {algorithm} {encoded} added by ternway\n");
     let known_hosts_path = ssh_dir.join("known_hosts");
     let mut file = std::fs::OpenOptions::new()
         .create(true)
@@ -1041,7 +1041,7 @@ pub fn replace_host_key(
         format!("[{}]:{}", profile.host, profile.port)
     };
     known_hosts
-        .add(&host, key, "replaced by hbox-term", key_type.into())
+        .add(&host, key, "replaced by ternway", key_type.into())
         .map_err(|error| format!("Could not record the new SSH host key: {error}"))?;
     known_hosts
         .write_file(&known_hosts_path, KnownHostFileKind::OpenSSH)
@@ -1427,7 +1427,7 @@ pub(crate) fn bounded_output(mut value: String) -> String {
         boundary -= 1;
     }
     value.truncate(boundary);
-    value.push_str("\n\n[Output truncated at 1 MB by hbox-term]");
+    value.push_str("\n\n[Output truncated at 1 MB by ternway]");
     value
 }
 
@@ -1523,12 +1523,12 @@ pub(crate) fn validate_sudo_password(client: &mut SshClient, password: &str) -> 
 /// parent shell, which is required by stock non-TTY sudo timestamp scoping.
 fn sudo_password_command(command: &str) -> String {
     let script = format!(
-        "IFS= read -r hbox_term_sudo_password || exit 1\n\
-         if printf '%s\\n' \"$hbox_term_sudo_password\" | sudo -S -k -p '' -v; then\n\
-           unset hbox_term_sudo_password\n\
+        "IFS= read -r ternway_sudo_password || exit 1\n\
+         if printf '%s\\n' \"$ternway_sudo_password\" | sudo -S -k -p '' -v; then\n\
+           unset ternway_sudo_password\n\
            {command}\n\
          else\n\
-           unset hbox_term_sudo_password\n\
+           unset ternway_sudo_password\n\
            exit 1\n\
          fi"
     );
@@ -1855,22 +1855,22 @@ mod live_onepassword_tests {
     #[test]
     #[ignore = "Requires explicit host authorization and SSH-agent signing approval"]
     fn live_agent_login_and_read_only_command() {
-        let socket = std::env::var("HBOX_TEST_SSH_AGENT_SOCKET")
+        let socket = std::env::var("TERNWAY_TEST_SSH_AGENT_SOCKET")
             .unwrap_or_else(|_| crate::identities::SYSTEM_AGENT_REFERENCE.into());
         live_agent_check(socket);
     }
 
     fn live_agent_check(socket: String) {
         use crate::identities::{Identity, IdentityProvider};
-        let host = std::env::var("HBOX_TEST_SSH_HOST")
-            .expect("Set HBOX_TEST_SSH_HOST to an authorized test host");
-        let username = std::env::var("HBOX_TEST_SSH_USER").expect("Set HBOX_TEST_SSH_USER");
-        let port: u16 = std::env::var("HBOX_TEST_SSH_PORT")
+        let host = std::env::var("TERNWAY_TEST_SSH_HOST")
+            .expect("Set TERNWAY_TEST_SSH_HOST to an authorized test host");
+        let username = std::env::var("TERNWAY_TEST_SSH_USER").expect("Set TERNWAY_TEST_SSH_USER");
+        let port: u16 = std::env::var("TERNWAY_TEST_SSH_PORT")
             .unwrap_or_else(|_| "22".into())
             .parse()
             .unwrap();
         let directory =
-            std::env::temp_dir().join(format!("hbox-live-ssh-{}", uuid::Uuid::new_v4()));
+            std::env::temp_dir().join(format!("ternway-live-ssh-{}", uuid::Uuid::new_v4()));
         let result = (|| -> Result<(), String> {
             let store = crate::storage::Store::open(
                 &directory.join("state.sqlite"),
@@ -1890,7 +1890,7 @@ mod live_onepassword_tests {
             .map_err(|e| e.to_string())?;
             let profile = store.save_server(&draft)?;
             // Set only after the user verifies this exact fingerprint.
-            if let Ok(fingerprint) = std::env::var("HBOX_TEST_ACCEPT_HOST_FINGERPRINT") {
+            if let Ok(fingerprint) = std::env::var("TERNWAY_TEST_ACCEPT_HOST_FINGERPRINT") {
                 super::accept_host_key(
                     &store,
                     &profile.id,
@@ -1900,9 +1900,9 @@ mod live_onepassword_tests {
                 )?;
             }
             let mut client = super::SshClient::connect_with_cancellation(&profile, None, &store)?;
-            let output = client.exec("printf 'hbox-agent-ok\\n'")?;
+            let output = client.exec("printf 'ternway-agent-ok\\n'")?;
             let _ = client.disconnect();
-            if output.exit_code != 0 || output.stdout.trim() != "hbox-agent-ok" {
+            if output.exit_code != 0 || output.stdout.trim() != "ternway-agent-ok" {
                 return Err("Authenticated, but read-only command verification failed".into());
             }
             if directory.join("vault").exists() {

@@ -383,7 +383,7 @@ export function applyTerminalAppearance(): void {
 
 export function setTerminalRenderer(renderer: TerminalRenderer): void {
   state.terminalRenderer = renderer;
-  try { localStorage.setItem("hbox-term-renderer", renderer); } catch { /* not persisted */ }
+  try { localStorage.setItem("ternway-renderer", renderer); } catch { /* not persisted */ }
   for (const surface of terminalSurfaces.values()) surface.setWebgl(useWebglRenderer());
 }
 
@@ -789,7 +789,7 @@ export function pasteIntoFocused(text: string): boolean {
   return true;
 }
 
-// Copies and pastes made in hbox-term, newest first; kept in memory only.
+// Copies and pastes made in ternway, newest first; kept in memory only.
 const CLIPBOARD_HISTORY_SIZE = 25;
 const clipboardHistory: string[] = [];
 

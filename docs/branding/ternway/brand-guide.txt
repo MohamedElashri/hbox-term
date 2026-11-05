@@ -59,18 +59,11 @@ and show About from Settings plus the native application menu.
 Keep the full existing license text and attribution; author credit does not
 replace the project's existing copyright notices.
 
-Release implementation notes
-1. Apply the approved display name, app icons, About screen and in-app copy.
-2. Keep the bundle identifier and data/config lookup compatible with existing
-   installations; do not strand saved profiles, vault files or updater trust.
-3. Introduce executable/config aliases deliberately, with regression coverage.
-4. Update packaging, installer, desktop entry, CLI help, release assets and docs.
-5. Preserve the current repository and updater URLs until any repository move
-   is explicitly decided. Generate .icns and PNG sizes from the approved vector.
-6. Re-run macOS/Linux CI and native About/icon checks before updating the PR.
-The Ternway display name, icons and About screen are implemented in the app.
-The signed QA bundle was checked in light/dark modes. The release remains a draft;
-no production installation or repository name was changed.
+Release implementation
+Ternway is used for the application, package, executable, bundle identifier,
+configuration paths, environment variables and repository links. The icon,
+About screen and README artwork use the selected visual identity.
+The release stays in draft until all platform packages are ready.
 
 Files
 concept-board.png — generated image preview (built-in image_gen).

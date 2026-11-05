@@ -160,7 +160,7 @@ pub fn start(
         .map(|name| name.to_string_lossy().into_owned())
         .filter(|name| !name.is_empty())
         .unwrap_or_else(|| "file".into());
-    let dir = std::env::temp_dir().join("hbox-term-edit").join(&id);
+    let dir = std::env::temp_dir().join("ternway-edit").join(&id);
     fs::create_dir_all(&dir)
         .map_err(|error| format!("Could not create {}: {error}", dir.display()))?;
     #[cfg(unix)]
@@ -305,7 +305,7 @@ mod tests {
     }
 
     fn temp_dir() -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("hbox-edit-test-{}", Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("ternway-edit-test-{}", Uuid::new_v4()));
         fs::create_dir_all(&dir).unwrap();
         dir
     }

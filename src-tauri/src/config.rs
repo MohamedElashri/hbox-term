@@ -1,4 +1,4 @@
-//! The hbox-term config file, in Ghostty's `key = value` format.
+//! The ternway config file, in Ghostty's `key = value` format.
 //!
 //! Rust reads the files, follows `config-file` includes, finds theme files and watches
 //! everything it read; the frontend interprets the keys. A new config includes the user's
@@ -18,10 +18,10 @@ const MAX_INCLUDE_DEPTH: usize = 10;
 const RELOAD_DEBOUNCE: Duration = Duration::from_millis(150);
 
 const DEFAULT_CONFIG_HEADER: &str = "\
-# hbox-term configuration, in Ghostty's format: https://ghostty.org/docs/config
+# Ternway configuration, in Ghostty's format: https://ghostty.org/docs/config
 #
 # Your Ghostty config is included below, so what you set there applies here too.
-# Settings after the include override it for hbox-term only. Changes apply on save.
+# Settings after the include override it for Ternway only. Changes apply on save.
 ";
 
 /// The new config: a header plus optional includes of the Ghostty configs Ghostty itself reads.
@@ -88,7 +88,7 @@ fn config_home() -> Option<PathBuf> {
 
 pub fn config_path() -> Result<PathBuf, String> {
     config_home()
-        .map(|home| home.join("hbox-term").join("config"))
+        .map(|home| home.join("ternway").join("config"))
         .ok_or_else(|| "Could not find your home directory".to_string())
 }
 
@@ -250,7 +250,7 @@ fn read_profiles(
 fn theme_dirs() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
     if let Some(home) = config_home() {
-        dirs.push(home.join("hbox-term").join("themes"));
+        dirs.push(home.join("ternway").join("themes"));
         dirs.push(home.join("ghostty").join("themes"));
     }
     if let Some(resources) = std::env::var_os("GHOSTTY_RESOURCES_DIR") {
@@ -372,7 +372,7 @@ mod tests {
 
     #[test]
     fn follows_includes_once() {
-        let dir = std::env::temp_dir().join(format!("hbox-config-{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("ternway-config-{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(&dir).unwrap();
         fs::write(
             dir.join("config"),

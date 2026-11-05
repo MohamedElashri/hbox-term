@@ -155,7 +155,7 @@ pub fn delete(connection: &Connection, id: &str) -> Result<(), String> {
 mod tests {
     use super::*;
     fn fixture() -> (Connection, std::path::PathBuf) {
-        let dir = std::env::temp_dir().join(format!("hbox-identities-{}", uuid::Uuid::new_v4()));
+        let dir = std::env::temp_dir().join(format!("ternway-identities-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("state.sqlite");
         let connection = Connection::open(&path).unwrap();

@@ -1,14 +1,14 @@
 [package]
-name = "hbox-term"
+name = "ternway"
 version = "0.2.0"
-description = "hbox-term: a fast local and remote terminal workspace with agentless Linux server management over SSH."
+description = "Ternway: a fast local and remote terminal workspace with agentless Linux server management over SSH."
 authors = ["Mohamed Elashri <git@elashri.com>"]
 license = "MIT"
 edition = "2021"
 rust-version = "1.88.0"
 
 [lib]
-name = "hbox_term_lib"
+name = "ternway_lib"
 crate-type = ["lib", "cdylib", "staticlib"]
 
 [build-dependencies]

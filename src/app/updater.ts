@@ -7,7 +7,7 @@ import { escapeHtml, formatBytes } from "./format";
 import { root } from "./state";
 import { UpdateController } from "./updates";
 
-export const RELEASES_URL = "https://github.com/MohamedElashri/hbox-term/releases";
+export const RELEASES_URL = "https://github.com/MohamedElashri/ternway/releases";
 
 interface AppMetadata { version: string; updateUnsupportedReason: string }
 let metadata: AppMetadata | null = null;

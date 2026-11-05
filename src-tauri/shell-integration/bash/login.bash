@@ -1,4 +1,4 @@
-# hbox-term starts bash as `bash --rcfile <this file> -i`, which reads only this file. Do what a
+# ternway starts bash as `bash --rcfile <this file> -i`, which reads only this file. Do what a
 # login shell does (as a terminal would start it), then load the integration.
 [ -r /etc/profile ] && . /etc/profile
 if [ -r ~/.bash_profile ]; then
@@ -8,4 +8,4 @@ elif [ -r ~/.bash_login ]; then
 elif [ -r ~/.profile ]; then
   . ~/.profile
 fi
-. "$(dirname "${BASH_SOURCE[0]}")/hbox-term.bash"
+. "$(dirname "${BASH_SOURCE[0]}")/ternway.bash"

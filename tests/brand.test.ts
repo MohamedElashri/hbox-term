@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { BRAND, buildSummary } from "../src/app/brand.ts";
 
-test("rebranding retains the existing project/update destination", () => {
+test("brand links point to the Ternway project", () => {
   assert.equal(BRAND.name, "Ternway");
-  assert.equal(BRAND.releases, "https://github.com/MohamedElashri/hbox-term/releases");
+  assert.equal(BRAND.releases, "https://github.com/MohamedElashri/ternway/releases");
 });
 test("copied build details contain only selected build metadata", () => {
   const info = {version:"0.2.0-beta.1",os:"linux",arch:"aarch64",commit:"abc123",debug:false, password:"never copy",host:"private.example"};

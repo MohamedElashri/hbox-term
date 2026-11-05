@@ -1,5 +1,5 @@
-//! The AppImage starts hbox-term with its runtime's environment: library, Python, GTK and data
-//! paths inside the image, plus a few settings of its own. hbox-term needs them, but shells and
+//! The AppImage starts ternway with its runtime's environment: library, Python, GTK and data
+//! paths inside the image, plus a few settings of its own. ternway needs them, but shells and
 //! editors started from it must see the user's environment, or for example Python finds the
 //! image's `PYTHONHOME` and fails to start.
 
@@ -79,24 +79,24 @@ mod tests {
 
     fn run(vars: &[(&str, &str)]) -> Vec<(String, Option<String>)> {
         let vars = vars.iter().map(|(k, v)| (k.to_string(), v.to_string()));
-        changes(vars, "/tmp/.mount_hbox/")
+        changes(vars, "/tmp/.mount_ternway/")
     }
 
     #[test]
     fn removes_image_paths_and_runtime_settings() {
         let changes = run(&[
-            ("PATH", "/tmp/.mount_hbox/usr/bin/:/usr/local/bin:/usr/bin"),
-            ("PYTHONHOME", "/tmp/.mount_hbox/usr/"),
+            ("PATH", "/tmp/.mount_ternway/usr/bin/:/usr/local/bin:/usr/bin"),
+            ("PYTHONHOME", "/tmp/.mount_ternway/usr/"),
             (
                 "LD_LIBRARY_PATH",
-                "/tmp/.mount_hbox/usr/lib/:/tmp/.mount_hbox/lib/:",
+                "/tmp/.mount_ternway/usr/lib/:/tmp/.mount_ternway/lib/:",
             ),
             (
                 "XDG_DATA_DIRS",
-                "/tmp/.mount_hbox/usr/share:/usr/share:/usr/local/share",
+                "/tmp/.mount_ternway/usr/share:/usr/share:/usr/local/share",
             ),
             ("GTK_THEME", "Adwaita:dark"),
-            ("APPIMAGE", "/home/me/hbox-term.AppImage"),
+            ("APPIMAGE", "/home/me/ternway.AppImage"),
             ("HOME", "/home/me"),
             ("EDITOR", "nvim"),
         ]);

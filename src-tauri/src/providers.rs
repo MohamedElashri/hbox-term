@@ -27,11 +27,11 @@ const MAX_OVERVIEW_OUTPUT_BYTES: usize = 256 * 1024;
 const MAX_DOCKER_PAGE_OUTPUT_BYTES: usize = 4 * 1024 * 1024;
 const MAX_RUNTIME_PROBE_OUTPUT_BYTES: usize = 64 * 1024;
 const RUNTIME_PROBE_TIMEOUT: Duration = Duration::from_secs(8);
-const OVERVIEW_SECTION_MARKER: &str = "__HBOX_TERM_OVERVIEW_V1__";
-const DOCKER_ITEMS_MARKER: &str = "__HBOX_TERM_DOCKER_ITEMS_V1__";
-const DOCKER_STATS_MARKER: &str = "__HBOX_TERM_DOCKER_STATS_V1__";
+const OVERVIEW_SECTION_MARKER: &str = "__TERNWAY_OVERVIEW_V1__";
+const DOCKER_ITEMS_MARKER: &str = "__TERNWAY_DOCKER_ITEMS_V1__";
+const DOCKER_STATS_MARKER: &str = "__TERNWAY_DOCKER_STATS_V1__";
 const OVERVIEW_SCRIPT: &str = r#"
-marker() { printf '\n__HBOX_TERM_OVERVIEW_V1__%s\n' "$1"; }
+marker() { printf '\n__TERNWAY_OVERVIEW_V1__%s\n' "$1"; }
 
 cpu_before=$(awk '/^cpu / {print $2,$3,$4,$5,$6,$7,$8,$9; exit}' /proc/stat 2>/dev/null)
 
@@ -134,8 +134,8 @@ case "$section" in
   *) printf 'Unknown container resource section\n' >&2; exit 64 ;;
 esac
 
-printf '__HBOX_TERM_DOCKER_ITEMS_V1__\n%s\n' "$items"
-printf '__HBOX_TERM_DOCKER_STATS_V1__\n'
+printf '__TERNWAY_DOCKER_ITEMS_V1__\n%s\n' "$items"
+printf '__TERNWAY_DOCKER_STATS_V1__\n'
 if [ "$section" = containers ] && [ -n "$items" ]; then
   ids=$(printf '%s\n' "$items" | sed -n 's/.*"ID"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | sed -n '/^[[:alnum:]_.:-][[:alnum:]_.:-]*$/p' | sed -n "1,${limit}p")
   if [ -n "$ids" ]; then
@@ -302,12 +302,12 @@ pub fn processes(
         let fallback_start = start.saturating_add(1);
         let fallback_end = end.saturating_add(1);
         let output = client.exec_ok(&format!(
-            "if ps -eo pid=,user=,%cpu=,%mem=,rss=,etimes=,args= --sort=-%cpu >/dev/null 2>&1; then printf 'hbox-term-eo\\n'; ps -eo pid=,user=,%cpu=,%mem=,rss=,etimes=,args= --sort=-%cpu | sed -n '{start},{end}p'; else printf 'hbox-term-aux\\n'; ps aux | sed -n '1p;{fallback_start},{fallback_end}p'; fi",
+            "if ps -eo pid=,user=,%cpu=,%mem=,rss=,etimes=,args= --sort=-%cpu >/dev/null 2>&1; then printf 'ternway-eo\\n'; ps -eo pid=,user=,%cpu=,%mem=,rss=,etimes=,args= --sort=-%cpu | sed -n '{start},{end}p'; else printf 'ternway-aux\\n'; ps aux | sed -n '1p;{fallback_start},{fallback_end}p'; fi",
         ))?;
         let mut lines = output.lines();
         let layout = lines.next().unwrap_or_default();
         let mut processes = Vec::new();
-        if layout == "hbox-term-aux" {
+        if layout == "ternway-aux" {
             let headers = lines
                 .next()
                 .unwrap_or_default()
@@ -502,10 +502,10 @@ pub fn cron_action(
                 }
                 let raw = line
                     .trim()
-                    .strip_prefix("# HBOX_TERM_DISABLED ")
+                    .strip_prefix("# TERNWAY_DISABLED ")
                     .unwrap_or(line.trim());
                 result.push(if action == "disable" {
-                    format!("# HBOX_TERM_DISABLED {raw}")
+                    format!("# TERNWAY_DISABLED {raw}")
                 } else {
                     raw.to_string()
                 });
@@ -927,7 +927,7 @@ fn parse_user_crontab(text: &str, user: &str) -> Vec<CronJob> {
         .enumerate()
         .filter_map(|(index, original)| {
             let trimmed = original.trim();
-            let (enabled, line) = if let Some(line) = trimmed.strip_prefix("# HBOX_TERM_DISABLED ")
+            let (enabled, line) = if let Some(line) = trimmed.strip_prefix("# TERNWAY_DISABLED ")
             {
                 (false, line)
             } else {
@@ -944,7 +944,7 @@ fn parse_user_crontab(text: &str, user: &str) -> Vec<CronJob> {
             let schedule = fields[..5].join(" ");
             let command = fields[5..]
                 .join(" ")
-                .split(" # hbox-term:")
+                .split(" # ternway:")
                 .next()
                 .unwrap_or_default()
                 .trim()
@@ -965,18 +965,18 @@ fn parse_user_crontab(text: &str, user: &str) -> Vec<CronJob> {
 }
 
 fn cron_line_id(line: &str, index: usize) -> String {
-    line.rsplit_once(" # hbox-term:")
+    line.rsplit_once(" # ternway:")
         .map(|(_, id)| id.trim().to_string())
         .filter(|id| id.starts_with("user:"))
         .unwrap_or_else(|| format!("user:line:{index}"))
 }
 
 fn cron_job_line(id: &str, schedule: &str, command: &str, enabled: bool) -> String {
-    let line = format!("{} {} # hbox-term:{}", schedule.trim(), command.trim(), id);
+    let line = format!("{} {} # ternway:{}", schedule.trim(), command.trim(), id);
     if enabled {
         line
     } else {
-        format!("# HBOX_TERM_DISABLED {line}")
+        format!("# TERNWAY_DISABLED {line}")
     }
 }
 
@@ -2680,7 +2680,7 @@ pub fn write_file(
             .filter(|name| !name.is_empty())
             .ok_or_else(|| "Choose a file to save".to_string())?;
         let temporary_path = path.with_file_name(format!(
-            ".{}.hbox-term-{}.tmp",
+            ".{}.ternway-{}.tmp",
             name.to_string_lossy(),
             Uuid::new_v4()
         ));
@@ -2962,8 +2962,8 @@ pub fn download_path(
     let local_target = resolve_local_path(local_target);
     let transfer_id = Uuid::new_v4().to_string();
     let file_staging =
-        local_target.with_file_name(format!(".hbox-term-download-{transfer_id}.part"));
-    let directory_staging = local_target.join(format!(".hbox-term-download-{transfer_id}"));
+        local_target.with_file_name(format!(".ternway-download-{transfer_id}.part"));
+    let directory_staging = local_target.join(format!(".ternway-download-{transfer_id}"));
     let mut created_directories = Vec::new();
     let mut file_staging_created = false;
     let mut directory_staging_created = false;
@@ -3304,7 +3304,7 @@ fn upload_file(
         .filter(|name| !name.is_empty())
         .ok_or_else(|| "Choose a remote file destination".to_string())?;
     let temporary_path = destination.with_file_name(format!(
-        ".{}.hbox-term-upload-{}.part",
+        ".{}.ternway-upload-{}.part",
         name.to_string_lossy(),
         Uuid::new_v4()
     ));
