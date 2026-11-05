@@ -144,7 +144,9 @@ export class TerminalSurface {
     }
   }
 
-  show(layer: HTMLElement): void {
+  show(layer: HTMLElement, rect: { x: number; y: number; width: number; height: number }): void {
+    // xterm measures its cell size during open(), so size the host before opening it.
+    this.place(rect);
     if (this.host.parentElement !== layer) layer.append(this.host);
     if (!this.host.hidden && this.opened) return;
     this.host.hidden = false;
@@ -168,7 +170,7 @@ export class TerminalSurface {
   hasFocus(): boolean { return this.host.contains(document.activeElement); }
 
   /** Positions the pane inside the terminal layer. */
-  place(rect: { x: number; y: number; width: number; height: number }): void {
+  private place(rect: { x: number; y: number; width: number; height: number }): void {
     Object.assign(this.host.style, { left: `${rect.x}px`, top: `${rect.y}px`, width: `${rect.width}px`, height: `${rect.height}px` });
   }
 

@@ -1,5 +1,6 @@
 import { rememberGroup } from "./app/connection-groups";
 import { closeCustomSelects } from "./app/select-controls";
+import { containModalFocus, handleModalKeydown } from "./app/modal-state";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import "@fontsource/jetbrains-mono/400.css";
@@ -18,9 +19,10 @@ import { appWindow, DEFAULT_INTERFACE_SCALE, quickMode, root, state } from "./ap
 import { togglePalette } from "./app/palette";
 import { loadTerminalConfig } from "./app/terminal-config";
 import { installTabStripHandlers } from "./app/terminal-tabs";
-import { dropOnPane, installDockDivider, paneAt, restoreSession, runTerminalAction, snapshotSession, type SavedSession } from "./app/terminal";
+import { dropOnPane, installDockDivider, paneAt, restoreSession, runTerminalAction, type SavedSession } from "./app/terminal";
 import { dismissTransferToast, setInterfaceScale, showToast, stepInterfaceScale, syncTransferToast } from "./app/toasts";
 import { refreshSnapshot, selectLocalWorkspace } from "./app/workspace";
+import { saveSession, sessionSavingEnabled } from "./app/session-save";
 import { confirm } from "./app/modals";
 import "./styles.css";
 import type { CredentialStatus, TerminalEvent, TransferProgress } from "./types";
@@ -89,6 +91,7 @@ root.addEventListener("click", (event) => {
 });
 
 window.addEventListener("contextmenu", (event) => { event.preventDefault(); }, { capture: true });
+document.addEventListener("focusin", event => containModalFocus(root, event));
 window.addEventListener("keydown", (event) => {
   // This listener runs in capture phase, before the picker's key handler.
   const openPicker = root.querySelector<HTMLElement>(".custom-select.open");
@@ -99,6 +102,13 @@ window.addEventListener("keydown", (event) => {
     openPicker.querySelector<HTMLButtonElement>(".custom-select-trigger")?.focus();
     return;
   }
+  if (event.key === "Escape" && (state.modal || state.appDialogPrompt)) {
+    event.preventDefault();
+    event.stopPropagation();
+    closeModal();
+    return;
+  }
+  if (handleModalKeydown(root, event)) return;
   const target = event.target as HTMLElement;
   const inTerminal = Boolean(target.closest?.(".terminal-host"));
   const inField = !inTerminal && target.matches?.("input, textarea, select, [contenteditable]");
@@ -139,13 +149,9 @@ window.addEventListener("keydown", (event) => {
     event.preventDefault();
     root.querySelector<HTMLInputElement>('[data-field="server-search"]')?.focus();
   }
-  if (event.key === "Escape" && (state.modal || state.appDialogPrompt)) closeModal();
 }, { capture: true });
 
 const SESSION_SAVE_INTERVAL_MS = 30_000;
-let lastSavedSession = "";
-
-const sessionSavingEnabled = (): boolean => state.terminalConfig.config.windowSaveState !== "never";
 
 async function restoreSavedSession(): Promise<void> {
   if (!sessionSavingEnabled()) return;
@@ -157,18 +163,19 @@ async function restoreSavedSession(): Promise<void> {
   }
 }
 
-async function saveSession(): Promise<void> {
-  if (!sessionSavingEnabled()) return;
-  const contents = JSON.stringify(snapshotSession());
-  if (contents === lastSavedSession) return;
-  await invoke("save_session", { contents });
-  lastSavedSession = contents;
-}
-
 /** Saves local tabs periodically (so a crash loses little) and when the window closes. */
 function startSessionSaving(): void {
-  window.setInterval(() => { void saveSession().catch(() => undefined); }, SESSION_SAVE_INTERVAL_MS);
-  void appWindow.onCloseRequested(async () => { await saveSession().catch(() => undefined); });
+  window.setInterval(() => {
+    void saveSession().catch(error => showToast(`Could not save local tabs: ${errorText(error)}`, "info"));
+  }, SESSION_SAVE_INTERVAL_MS);
+  void appWindow.onCloseRequested(async event => {
+    try {
+      await saveSession();
+    } catch (error) {
+      event.preventDefault();
+      if (await confirm(`Your local tabs could not be saved. Quit without saving them?\n${errorText(error)}`, { title: "Session could not be saved", kind: "warning", confirmLabel: "Quit without saving" })) await appWindow.destroy();
+    }
+  });
 }
 
 async function bootstrap(): Promise<void> {

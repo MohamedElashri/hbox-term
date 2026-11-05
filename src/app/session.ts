@@ -44,6 +44,26 @@ export function credentialPromptMode(error: unknown): MasterPasswordPromptMode {
   return errorKind(error) === "masterPasswordSetupRequired" ? "setup" : "unlock";
 }
 
+export function finishSshPasswordPrompt(value: { password: string; remember: boolean } | null): void {
+  const finish = state.finishSshPasswordWaiter;
+  state.finishSshPasswordWaiter = null;
+  state.sshPasswordPrompt = null;
+  state.modal = null;
+  render();
+  finish?.(value);
+}
+
+async function supplySshPassword(serverId: string, message: string): Promise<void> {
+  if (state.finishSshPasswordWaiter) throw new OperationCancelledError();
+  state.sshPasswordPrompt = { serverId, message };
+  state.modal = "ssh-password";
+  const answer = new Promise<{ password: string; remember: boolean } | null>(resolve => { state.finishSshPasswordWaiter = resolve; });
+  render();
+  const result = await answer;
+  if (!result) throw new OperationCancelledError();
+  await invokeCommand("set_ssh_password", { serverId, ...result });
+}
+
 export function requestMasterPassword(mode: MasterPasswordPromptMode, error = ""): Promise<string | null> {
   if (state.masterPasswordWaiter) return state.masterPasswordWaiter;
   state.masterPasswordPrompt = { mode, error };
@@ -92,6 +112,12 @@ export const { cancelCurrentOperation, invokeCommand } = createCommandClient({
   unlockForCredentialError,
   requestHostKeyDecision,
   requestHostKeyTrust,
+  requestSshPassword: supplySshPassword,
+  cancelRecovery: () => {
+    if (state.finishSshPasswordWaiter) finishSshPasswordPrompt(null);
+    if (state.hostKeyWaiter) finishHostKeyPrompt(false);
+    if (state.masterPasswordWaiter) finishMasterPasswordPrompt(null);
+  },
 });
 
 export function setError(error: unknown): void {

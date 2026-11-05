@@ -26,3 +26,12 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm test
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install loopback SSH fixture
+        run: python -m pip install -r tests/fixtures/requirements.txt
+      - name: Test password login over SSH
+        run: make test-ssh-password
+        env:
+          TERNWAY_SSH_TEST_PYTHON: python

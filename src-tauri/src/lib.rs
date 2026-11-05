@@ -50,6 +50,10 @@ pub(crate) enum AppError {
     Message {
         message: String,
     },
+    SshPasswordRequired {
+        server_id: String,
+        message: String,
+    },
     MasterPasswordRequired {
         message: String,
     },
@@ -106,6 +110,18 @@ struct UploadConflictPayload {
 
 impl From<String> for AppError {
     fn from(value: String) -> Self {
+        if let Some(payload) = value.strip_prefix("SSH_PASSWORD_REQUIRED:") {
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(payload) {
+                if let (Some(id), Some(message)) =
+                    (parsed["serverId"].as_str(), parsed["message"].as_str())
+                {
+                    return AppError::SshPasswordRequired {
+                        server_id: id.to_owned(),
+                        message: message.to_owned(),
+                    };
+                }
+            }
+        }
         if let Some(payload) = value.strip_prefix("HOST_KEY_MISMATCH:") {
             if let Ok(parsed) = serde_json::from_str::<HostKeyMismatchPayload>(payload) {
                 return AppError::HostKeyMismatch {
@@ -274,6 +290,22 @@ fn set_connection_group(
     group_name: String,
 ) -> Result<(), AppError> {
     state.store.set_connection_group(&server_ids, &group_name)?;
+    Ok(())
+}
+
+#[tauri::command(async)]
+fn set_ssh_password(
+    state: State<'_, AppState>,
+    server_id: String,
+    password: String,
+    remember: bool,
+) -> Result<(), AppError> {
+    let password = zeroize::Zeroizing::new(password);
+    state
+        .store
+        .set_ssh_password(&server_id, password.as_str(), remember)?;
+    let affected = affected_server_ids(&state.store, &server_id)?;
+    close_server_activity(&state, &affected)?;
     Ok(())
 }
 
@@ -1216,6 +1248,7 @@ fn disconnect_server(state: State<'_, AppState>, server_id: String) -> Result<()
     }
     log_stream::close_server(&state.log_streams, &server_id);
     terminal::close_server(&state.terminals, &server_id);
+    state.store.forget_session_password(&server_id);
     Ok(ssh::disconnect_server(&server_id)?)
 }
 
@@ -1739,12 +1772,28 @@ pub fn run() {
                         )?;
                         if cfg!(target_os = "macos") {
                             submenu.set_text("Ternway")?;
+                            // The default macOS Quit item terminates Cocoa directly, bypassing
+                            // the asynchronous window-close session save.
+                            submenu.remove_at(submenu.items()?.len() - 1)?;
+                            submenu.append(&tauri::menu::MenuItem::with_id(
+                                app,
+                                "quit-ternway",
+                                "Quit Ternway",
+                                true,
+                                Some("CmdOrCtrl+Q"),
+                            )?)?;
                         }
                     }
                 }
             }
             app.set_menu(menu)?;
             app.on_menu_event(|app, event| {
+                if event.id().as_ref() == "quit-ternway" {
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.close();
+                    }
+                    return;
+                }
                 let event_name = match event.id().as_ref() {
                     "about-ternway" => "show-about",
                     "check-updates" => "check-updates",
@@ -1792,6 +1841,7 @@ pub fn run() {
             reset_credentials,
             get_state,
             save_server,
+            set_ssh_password,
             set_connection_group,
             read_ssh_config,
             create_identity,
@@ -1880,6 +1930,21 @@ pub fn run() {
             open_config_file,
             close_terminal
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running ternway application");
+        .build(tauri::generate_context!())
+        .expect("error while building ternway application")
+        .run(|app, event| {
+            if let tauri::RunEvent::ExitRequested { code, api, .. } = event {
+                // Native Quit must await the same session save as closing the main window.
+                // Restarts use a distinct exit code and save from the updater before relaunch.
+                if matches!(code, None | Some(0)) {
+                    if let Some(window) = app.get_webview_window("main") {
+                        api.prevent_exit();
+                        if let Err(error) = window.close() {
+                            eprintln!("Could not close Ternway: {error}");
+                            app.exit(1);
+                        }
+                    }
+                }
+            }
+        });
 }

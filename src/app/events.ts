@@ -1,6 +1,6 @@
 import { loadAboutMetadata, aboutBuildSummary } from "./about";
 import { BRAND } from "./brand";
-import { importedDraft } from "./ssh-import";
+import { importedDraft, renderImportChoices } from "./ssh-import";
 import type { SshConfigEntry } from "../types";
 import { escapeHtml } from "./format";
 import { errorText } from "./command-client";
@@ -15,7 +15,7 @@ import { formatBytes } from "./format";
 import { confirm, requestTextInput, finishAppDialog, finishTextInput, message, renderAuthFieldsForForm } from "./modals";
 import { filteredServers, groupKey, render, renderServerGroups } from "./render";
 import { closeCustomSelects, syncCustomSelect } from "./select-controls";
-import { cancelCurrentOperation, finishHostKeyPrompt, setError } from "./session";
+import { cancelCurrentOperation, finishHostKeyPrompt, finishSshPasswordPrompt, setError } from "./session";
 import { activeCapabilities, activeTerminalTabByWorkspace, appWindow, createLogViewer, DEFAULT_INTERFACE_SCALE, root, state } from "./state";
 import { clearActiveTerminal, closeTerminalGroup, focusPane, openNewTerminal, reconnectTerminal, setTerminalRenderer, toggleDockPosition, toggleTerminalDock } from "./terminal";
 import { dismissToast, setInterfaceScale, stepInterfaceScale } from "./toasts";
@@ -297,9 +297,7 @@ export async function runAction(action: string, target: HTMLElement = document.c
       form.querySelector<HTMLElement>("[data-import-hosts]")!.textContent = "Reading…";
       try {
         importEntries = await invoke<SshConfigEntry[]>("read_ssh_config", { path: String(new FormData(form).get("path") || "") });
-        form.querySelector<HTMLElement>("[data-import-hosts]")!.innerHTML = importEntries.length
-          ? importEntries.map((entry, index) => `<label class="import-host"><input type="checkbox" name="hosts" value="${index}" checked/><span><strong>${escapeHtml(entry.alias)}</strong><small>${escapeHtml(entry.username || "default user")}@${escapeHtml(entry.host || entry.alias)}:${entry.port || 22}</small></span></label>`).join("")
-          : "No explicit Host aliases found.";
+        form.querySelector<HTMLElement>("[data-import-hosts]")!.innerHTML = renderImportChoices(importEntries);
         notice.textContent = "";
       } catch (error) { notice.textContent = errorText(error); form.querySelector<HTMLElement>("[data-import-hosts]")!.textContent = ""; }
       break;
@@ -483,9 +481,9 @@ export function handleChange(event: Event): void {
   if (input.dataset.field === "ssh-config") {
     const entry = state.snapshot.sshConfigEntries.find((item) => item.alias === input.value);
     const form = input.closest<HTMLFormElement>('form[data-form="server"]');
-    if (entry && form) {
+    if (entry && form && !entry.issues?.length && !entry.service) {
       const set = (name: string, value: string) => { const field = form.elements.namedItem(name) as HTMLInputElement | null; if (field) field.value = value; };
-      set("host", entry.host ?? "");
+      set("host", entry.host || entry.alias);
       set("username", entry.username ?? "");
       set("port", String(entry.port ?? 22));
       if (entry.port && entry.port !== 22) {
@@ -493,7 +491,10 @@ export function handleChange(event: Event): void {
         const section = port?.closest<HTMLDetailsElement>("details");
         if (section) section.open = true;
       }
-      if (entry.keyPath) {
+      if (entry.authMethod === "password") {
+        const radio = form.querySelector<HTMLInputElement>('input[name="authMethod"][value="password"]');
+        if (radio) { radio.checked = true; renderAuthFieldsForForm(form); }
+      } else if (entry.keyPath) {
         const radio = form.querySelector<HTMLInputElement>('input[name="authMethod"][value="privateKey"]');
         if (radio) { radio.checked = true; renderAuthFieldsForForm(form); }
         const keySelect = form.elements.namedItem("keyPath") as HTMLSelectElement | null;
@@ -569,6 +570,11 @@ export async function handleSubmit(event: SubmitEvent): Promise<void> {
       const notice = form.querySelector<HTMLElement>("[data-identity-error]");
       if (notice) { notice.hidden = false; notice.textContent = errorText(error); }
     }
+  }
+  else if (kind === "ssh-password") {
+    if (!form.reportValidity()) return;
+    const data = new FormData(form);
+    finishSshPasswordPrompt({ password: String(data.get("password") ?? ""), remember: data.get("remember") === "on" });
   }
   else if (kind === "master-password") await submitMasterPasswordForm(form);
   else if (kind === "change-password") await changeMasterPasswordForm(form);

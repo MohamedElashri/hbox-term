@@ -615,6 +615,13 @@ impl<'a> KeyboardInteractivePrompt for PasswordPrompter<'a> {
     }
 }
 
+fn password_required(profile: &ServerProfile, message: &str) -> String {
+    format!(
+        "SSH_PASSWORD_REQUIRED:{}",
+        serde_json::json!({ "serverId": profile.id, "message": message })
+    )
+}
+
 fn authenticate(session: &Session, profile: &ServerProfile, store: &Store) -> Result<(), String> {
     match profile.auth_method {
         AuthMethod::SshAgent => {
@@ -658,10 +665,7 @@ fn authenticate(session: &Session, profile: &ServerProfile, store: &Store) -> Re
         AuthMethod::Password => {
             let password =
                 Zeroizing::new(store.get_secret(&profile.id, "password")?.ok_or_else(|| {
-                    format!(
-                        "No password is stored for {}. Edit its connection to add it.",
-                        profile.name
-                    )
+                    password_required(profile, "Enter the SSH password to connect.")
                 })?);
 
             let methods = session.auth_methods(&profile.username).unwrap_or("");
@@ -714,9 +718,10 @@ fn authenticate(session: &Session, profile: &ServerProfile, store: &Store) -> Re
                     (None, Some(kbd)) => kbd,
                     (None, None) => "Authentication rejected".to_string(),
                 };
-                return Err(format!(
-                    "Password authentication failed for {}: {detail}",
-                    profile.name
+                store.forget_session_password(&profile.id);
+                return Err(password_required(
+                    profile,
+                    &format!("The SSH password was rejected. Try again. {detail}"),
                 ));
             }
         }
@@ -1179,6 +1184,7 @@ fn is_retryable_connection_error(error: &str) -> bool {
         "authentication failed",
         "authentication was rejected",
         "no password is stored",
+        "ssh_password_required:",
         "private key does not exist",
         "choose an ssh private key",
         "host_key_",
@@ -1913,5 +1919,142 @@ mod live_onepassword_tests {
         let _ = std::fs::remove_dir_all(directory);
         result.expect("SSH-agent authentication and read-only command succeed");
         println!("Production SSH client: trusted host key, SSH-agent authentication, read-only command, and disconnect succeeded");
+    }
+}
+
+#[cfg(test)]
+mod password_login_tests {
+    use super::*;
+    use std::io::{BufRead, BufReader, Read};
+    use std::process::{Child, Command, Stdio};
+
+    struct Fixture {
+        server: Child,
+        directory: std::path::PathBuf,
+    }
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = self.server.kill();
+            let _ = self.server.wait();
+            let _ = std::fs::remove_dir_all(&self.directory);
+        }
+    }
+
+    #[test]
+    fn password_responses_never_fill_otp_or_echoed_challenges() {
+        let mut prompter = PasswordPrompter::new("fixture password");
+        let prompts = [
+            Prompt {
+                text: "Password: ".into(),
+                echo: false,
+            },
+            Prompt {
+                text: "Verification code: ".into(),
+                echo: false,
+            },
+        ];
+        assert_eq!(
+            prompter.prompt("qa", "", &prompts),
+            ["fixture password", ""]
+        );
+        assert!(prompter.mfa_prompt.is_some());
+        let mut prompter = PasswordPrompter::new("fixture password");
+        assert_eq!(
+            prompter.prompt(
+                "qa",
+                "",
+                &[Prompt {
+                    text: "Password: ".into(),
+                    echo: true
+                }]
+            ),
+            [""]
+        );
+    }
+
+    #[test]
+    #[ignore = "Run make test-ssh-password after installing the loopback fixture dependencies"]
+    fn password_login_over_real_ssh() {
+        for mode in ["password", "keyboard", "fallback"] {
+            let python = std::env::var("TERNWAY_SSH_TEST_PYTHON")
+                .expect("Set TERNWAY_SSH_TEST_PYTHON to the fixture virtualenv's Python");
+            let mut server = Command::new(python)
+                .arg(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/../tests/fixtures/ssh_password_server.py"
+                ))
+                .arg(mode)
+                .stdout(Stdio::piped())
+                .spawn()
+                .unwrap();
+            let directory =
+                std::env::temp_dir().join(format!("ternway-password-{}", uuid::Uuid::new_v4()));
+            let stdout = server.stdout.take().unwrap();
+            let _fixture = Fixture {
+                server,
+                directory: directory.clone(),
+            };
+            let (ready, port_line) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                let mut line = String::new();
+                let result = BufReader::new(stdout).read_line(&mut line).map(|_| line);
+                let _ = ready.send(result);
+            });
+            let line = port_line
+                .recv_timeout(Duration::from_secs(15))
+                .expect("SSH fixture startup timed out")
+                .unwrap();
+            let port: u16 = line
+                .trim()
+                .parse()
+                .expect("Install tests/fixtures/requirements.txt in TERNWAY_SSH_TEST_PYTHON");
+            let store = Store::open(
+                &directory.join("test.sqlite3"),
+                &directory.join("vault.enc"),
+            )
+            .unwrap();
+            let draft: crate::models::ServerDraft = serde_json::from_value(json!({"name":"Loopback fixture", "host":"127.0.0.1", "username":"qa", "port":port, "authMethod":"password"})).unwrap();
+            let profile = store.save_server(&draft).unwrap();
+            let connect = || {
+                let tcp = TcpStream::connect(("127.0.0.1", port)).unwrap();
+                let mut session = Session::new().unwrap();
+                session.set_timeout(5_000);
+                session.set_tcp_stream(tcp);
+                session.handshake().unwrap();
+                session
+            };
+            let session = connect();
+            let missing = authenticate(&session, &profile, &store).unwrap_err();
+            assert!(
+                matches!(crate::AppError::from(missing), crate::AppError::SshPasswordRequired { server_id, .. } if server_id == profile.id)
+            );
+            store
+                .set_ssh_password(&profile.id, "wrong fixture password", false)
+                .unwrap();
+            let rejected = authenticate(&session, &profile, &store).unwrap_err();
+            assert!(rejected.starts_with("SSH_PASSWORD_REQUIRED:"));
+            assert_eq!(store.get_secret(&profile.id, "password").unwrap(), None);
+            store
+                .set_ssh_password(&profile.id, " fixture SSH password ", false)
+                .unwrap();
+            let session = connect();
+            authenticate(&session, &profile, &store).unwrap();
+            assert!(
+                session.authenticated(),
+                "{mode} authentication did not complete"
+            );
+            let mut channel = session.channel_session().unwrap();
+            channel.exec("fixture-check").unwrap();
+            let mut output = String::new();
+            channel.read_to_string(&mut output).unwrap();
+            assert_eq!(output, "fixture-ok\n");
+            channel.close().unwrap();
+            channel.wait_close().unwrap();
+            assert_eq!(channel.exit_status().unwrap(), 0);
+            assert!(
+                !directory.join("vault.enc").exists(),
+                "Session-only passwords must not be written to disk"
+            );
+        }
     }
 }

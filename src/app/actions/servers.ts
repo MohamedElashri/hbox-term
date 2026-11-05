@@ -1,4 +1,5 @@
 import { connectionDraft } from "../connection-draft";
+import { saveConnection } from "../connection-save";
 import { invoke } from "@tauri-apps/api/core";
 import type { CredentialStatus, ServerProfile, ServerSaveResult } from "../../types";
 import { errorText } from "../command-client";
@@ -6,7 +7,7 @@ import { confirm, profileRouteContains, requestTextInput } from "../modals";
 import { render } from "../render";
 import { cancelCurrentOperation, errorKind, finishMasterPasswordPrompt, invokeCommand, setError } from "../session";
 import { activeServer, connectedServerIds, createLogViewer, dashboardSnapshots, state } from "../state";
-import { clearContainerLogs, clearRefreshTimer, closeInteractiveSessions, loadActiveView, refreshSnapshot, resetPaginationState, selectWorkspaceTab, setView } from "../workspace";
+import { clearContainerLogs, clearRefreshTimer, closeInteractiveSessions, loadActiveView, refreshSnapshot, resetPaginationState, selectServer, setView } from "../workspace";
 
 export function saveWorkspaceTabRenameForm(form: HTMLFormElement): void {
   const tab = state.openServerTabs.find((item) => item.id === state.renamingWorkspaceTabId);
@@ -112,6 +113,7 @@ export async function resetCredentialsForm(form: HTMLFormElement): Promise<void>
 }
 
 export async function saveServerForm(form: HTMLFormElement, testAfter: boolean): Promise<void> {
+  if (form.dataset.saving === "true") return;
   // Reveal invalid controls before native validation tries to focus them.
   for (const field of form.querySelectorAll<HTMLInputElement>("input:invalid")) {
     const section = field.closest<HTMLDetailsElement>("details");
@@ -126,43 +128,38 @@ export async function saveServerForm(form: HTMLFormElement, testAfter: boolean):
     return;
   }
   cancelCurrentOperation();
-  state.errorMessage = ""; render();
+  state.errorMessage = "";
+  form.dataset.saving = "true";
+  const buttons = [...form.querySelectorAll<HTMLButtonElement>('button[type="submit"], button[data-action="save-and-test"]')];
+  buttons.forEach(button => { button.disabled = true; });
   try {
-    const result = await invokeCommand<ServerSaveResult>("save_server", { draft: payload });
-    const saved = result.server;
-    for (const invalidatedServerId of result.invalidatedServerIds) {
-      await closeInteractiveSessions(invalidatedServerId);
-      connectedServerIds.delete(invalidatedServerId);
-      for (const tab of state.openServerTabs.filter((item) => item.serverId === invalidatedServerId)) dashboardSnapshots.delete(tab.id);
-    }
-    await refreshSnapshot(false);
-    let workspaceTab = state.openServerTabs.find((item) => item.serverId === saved.id);
-    if (!workspaceTab) {
-      workspaceTab = { id: crypto.randomUUID(), serverId: saved.id };
-      state.openServerTabs.push(workspaceTab);
-    }
-    state.editingServer = null;
-    state.modal = null;
-    if (state.activeWorkspaceTabId !== workspaceTab.id) {
-      await selectWorkspaceTab(workspaceTab.id);
-    } else if (result.invalidatedServerIds.includes(saved.id)) {
-      state.connection = null;
-      state.dashboard = null;
-      state.processes = [];
-      state.services = [];
-      state.docker = null;
-      state.ports = [];
-      state.remoteFiles = [];
-      state.logsViewer = createLogViewer({ source: "system", label: "System logs" }, 100);
-      resetPaginationState();
-    }
-    render();
-    if (testAfter) {
-      await testActiveServer();
-    } else {
-      await setView("dashboard");
-    }
+    await saveConnection(testAfter, {
+      persist: () => invokeCommand<ServerSaveResult>("save_server", { draft: payload }),
+      invalidate: async (serverId) => {
+        await closeInteractiveSessions(serverId);
+        connectedServerIds.delete(serverId);
+        for (const tab of state.openServerTabs.filter(item => item.serverId === serverId)) dashboardSnapshots.delete(tab.id);
+        if (state.activeServerId === serverId) {
+          state.connection = null;
+          state.dashboard = null;
+          state.processes = [];
+          state.services = [];
+          state.docker = null;
+          state.ports = [];
+          state.remoteFiles = [];
+          state.logsViewer = createLogViewer({ source: "system", label: "System logs" }, 100);
+          resetPaginationState();
+        }
+      },
+      refresh: () => refreshSnapshot(false),
+      finish: () => { state.editingServer = null; state.modal = null; render(); },
+      connect: serverId => selectServer(serverId),
+    });
   } catch (error) { setError(error); }
+  finally {
+    delete form.dataset.saving;
+    buttons.forEach(button => { button.disabled = false; });
+  }
 }
 
 export async function testActiveServer(): Promise<void> {

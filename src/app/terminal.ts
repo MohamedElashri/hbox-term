@@ -396,7 +396,7 @@ export interface SavedPane { cwd?: string; profile?: string; snapshot?: string }
 export interface SavedSession {
   version: 1;
   activeGroup: number;
-  groups: { title: string; root: PaneNode; focusedId: string; panes: Record<string, SavedPane> }[];
+  groups: { title: string; customTitle?: boolean; root: PaneNode; focusedId: string; panes: Record<string, SavedPane> }[];
 }
 
 /** Local tabs with their layout, directories, profiles and recent scrollback. */
@@ -415,7 +415,7 @@ export function snapshotSession(): SavedSession {
     }
     if (!root) continue;
     if (focusedLocal && leaves(group.root).includes(focusedLocal)) activeGroup = groups.length;
-    groups.push({ title: group.title, root, focusedId: panes[group.focusedId] ? group.focusedId : leaves(root)[0], panes });
+    groups.push({ title: group.title, customTitle: group.customTitle, root, focusedId: panes[group.focusedId] ? group.focusedId : leaves(root)[0], panes });
   }
   return { version: 1, activeGroup, groups };
 }
@@ -427,7 +427,7 @@ export async function restoreSession(saved: SavedSession): Promise<void> {
   for (const savedGroup of saved.groups) {
     const ids = new Map<string, string>();
     const root = mapLeaves(savedGroup.root, (oldId) => { const id = crypto.randomUUID(); ids.set(oldId, id); return id; });
-    const group: TerminalGroup = { id: crypto.randomUUID(), workspaceTabId: LOCAL_WORKSPACE_ID, title: savedGroup.title, root, focusedId: ids.get(savedGroup.focusedId) ?? leaves(root)[0], zoomed: false };
+    const group: TerminalGroup = { id: crypto.randomUUID(), workspaceTabId: LOCAL_WORKSPACE_ID, title: savedGroup.title, customTitle: savedGroup.customTitle, root, focusedId: ids.get(savedGroup.focusedId) ?? leaves(root)[0], zoomed: false };
     state.terminalGroups.push(group);
     restored.push(group);
     for (const [oldId, id] of ids) {
@@ -550,8 +550,7 @@ function layoutPanesInLayer(): Map<string, Rect> {
   for (const [id, rect] of layout.panes) {
     const surface = terminalSurfaces.get(id);
     if (!surface) continue;
-    surface.show(layerInner);
-    surface.place(rect);
+    surface.show(layerInner, rect);
     surface.setDimmed(ids.length > 1 && !group?.zoomed && id !== group?.focusedId);
     surface.host.classList.toggle("broadcasting", Boolean(group?.broadcast));
     shownSurfaces.add(surface);
@@ -622,10 +621,10 @@ export function mountTerminal(): void {
       placeholderObserver.observe(placeholder);
     }
   }
-  // Show first so the layer has a size, then lay the panes out inside it.
+  // Size the layer before opening restored panes; xterm cannot measure a zero-size host.
   terminalLayer.hidden = !placeholder;
-  layoutPanesInLayer();
   positionTerminalLayer();
+  layoutPanesInLayer();
   const surface = placeholder ? focusedSurface() : undefined;
   if (!surface) return;
   const focused = document.activeElement;

@@ -4877,6 +4877,7 @@ dependencies = [
  "chrono",
  "cron",
  "dirs 6.0.0",
+ "glob",
  "libc",
  "notify",
  "portable-pty",

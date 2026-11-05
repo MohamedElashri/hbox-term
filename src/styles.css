@@ -479,7 +479,7 @@ h1 { margin-bottom: 0; font: 600 35px/1.05 var(--font-display); letter-spacing: 
 @media (max-width: 600px) { .disk-stat-cards { grid-template-columns: 1fr; } }
 
 /* Local workspace: the terminal fills the content area. */
-.content-area-local { display: flex; padding: 0; overflow: hidden; background: var(--terminal-background, var(--term-bg)); }
+.content-area-local { display: flex; flex-direction: column; padding: 0; overflow: hidden; background: var(--terminal-background, var(--term-bg)); }
 .terminal-workspace-local { flex: 1; min-height: 0; border: 0; border-radius: 0; box-shadow: none; background: var(--terminal-background, var(--term-bg)); }
 .terminal-workspace-local .terminal-surface { min-height: 0; padding: 8px 4px 4px 12px; }
 .workspace-tab.workspace-tab-local { min-width: 0; margin-left: 14px; align-self: flex-end; cursor: pointer; font-family: var(--font-display); font-size: 12px; }
@@ -701,3 +701,5 @@ h1 { margin-bottom: 0; font: 600 35px/1.05 var(--font-display); letter-spacing: 
 }
 
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+.local-error { flex: 0 0 auto; padding: 10px 14px 0; }
+.local-error .inline-error { margin: 0; }

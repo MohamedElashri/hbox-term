@@ -96,6 +96,9 @@ pub struct SshKey {
 #[serde(rename_all = "camelCase")]
 pub struct SshConfigEntry {
     pub alias: String,
+    pub auth_method: Option<String>,
+    pub service: Option<String>,
+    pub issues: Vec<String>,
     pub host: Option<String>,
     pub username: Option<String>,
     pub port: Option<u16>,
