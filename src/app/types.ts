@@ -16,7 +16,7 @@ export type DockerSection = "containers" | "images" | "volumes" | "networks";
 export type ContainerPlatformTab = "runtime" | "compose";
 export type AdministrationTab = "firewall" | "keys" | "security" | "actions";
 export type ServerToolTab = AdministrationTab | "commands" | "tunnels";
-export type ModalKind = "server" | "workspace-tab-rename" | "service" | "editor" | "folder" | "docker" | "inspect" | "input-prompt" | "compose-scale" | "security" | "master-password" | "host-key" | "change-password" | "reset-credentials" | "cron" | "user" | "user-password" | "package-details" | "command" | "tunnel" | null;
+export type ModalKind = "ssh-import" | "identities" | "server" | "workspace-tab-rename" | "service" | "editor" | "folder" | "docker" | "inspect" | "input-prompt" | "compose-scale" | "security" | "master-password" | "host-key" | "change-password" | "reset-credentials" | "cron" | "user" | "user-password" | "package-details" | "command" | "tunnel" | null;
 export type MasterPasswordPromptMode = "setup" | "unlock";
 export type DashboardCardName = DashboardCard["kind"];
 

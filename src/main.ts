@@ -1,3 +1,5 @@
+import { rememberGroup } from "./app/connection-groups";
+import { closeCustomSelects } from "./app/select-controls";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import "@fontsource/jetbrains-mono/400.css";
@@ -67,6 +69,10 @@ async function installEventListeners(): Promise<void> {
 installTabStripHandlers(root);
 installDockDivider();
 root.addEventListener("click", (event) => { void handleClick(event); });
+root.addEventListener("toggle", (event) => {
+  const details = event.target as HTMLDetailsElement;
+  if (details.dataset.connectionGroup && !state.serverQuery) rememberGroup(details.dataset.connectionGroup, details.open);
+}, true);
 root.addEventListener("input", handleInput);
 root.addEventListener("change", handleChange);
 root.addEventListener("submit", (event) => { void handleSubmit(event); });
@@ -82,6 +88,15 @@ root.addEventListener("click", (event) => {
 
 window.addEventListener("contextmenu", (event) => { event.preventDefault(); }, { capture: true });
 window.addEventListener("keydown", (event) => {
+  // This listener runs in capture phase, before the picker's key handler.
+  const openPicker = root.querySelector<HTMLElement>(".custom-select.open");
+  if (event.key === "Escape" && openPicker) {
+    event.preventDefault();
+    event.stopPropagation();
+    closeCustomSelects(root);
+    openPicker.querySelector<HTMLButtonElement>(".custom-select-trigger")?.focus();
+    return;
+  }
   const target = event.target as HTMLElement;
   const inTerminal = Boolean(target.closest?.(".terminal-host"));
   const inField = !inTerminal && target.matches?.("input, textarea, select, [contenteditable]");

@@ -58,7 +58,7 @@ export class AppState {
   interfaceScale = INTERFACE_SCALE_LEVELS.includes(storedInterfaceScale as typeof INTERFACE_SCALE_LEVELS[number])
     ? storedInterfaceScale
     : DEFAULT_INTERFACE_SCALE;
-  snapshot: AppStateSnapshot = { version: 1, servers: [], sshKeys: [], sshConfigEntries: [] };
+  snapshot: AppStateSnapshot = { identities: [], version: 1, servers: [], sshKeys: [], sshConfigEntries: [] };
   activeServerId: string | null = null;
   activeWorkspaceTabId: string | null = null;
   openServerTabs: WorkspaceTab[] = [];

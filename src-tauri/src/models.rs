@@ -8,6 +8,7 @@ pub const APP_VERSION: u32 = 1;
 pub enum AuthMethod {
     Password,
     PrivateKey,
+    SshAgent,
 }
 
 impl Default for AuthMethod {
@@ -25,6 +26,8 @@ pub struct ServerProfile {
     pub username: String,
     pub port: u16,
     pub auth_method: AuthMethod,
+    #[serde(default)]
+    pub identity_id: Option<String>,
     pub key_path: Option<String>,
     pub jump_host_id: Option<String>,
     pub group_name: Option<String>,
@@ -55,6 +58,8 @@ pub struct ServerDraft {
     pub port: u32,
     #[serde(default)]
     pub auth_method: AuthMethod,
+    #[serde(default)]
+    pub identity_id: Option<String>,
     pub key_path: Option<String>,
     #[serde(default)]
     pub jump_host_id: Option<String>,
@@ -102,6 +107,7 @@ pub struct SshConfigEntry {
 pub struct AppStateSnapshot {
     pub version: u32,
     pub servers: Vec<ServerProfile>,
+    pub identities: Vec<crate::identities::Identity>,
     pub ssh_keys: Vec<SshKey>,
     pub ssh_config_entries: Vec<SshConfigEntry>,
 }

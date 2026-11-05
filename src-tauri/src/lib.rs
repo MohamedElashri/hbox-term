@@ -1,8 +1,11 @@
+#[cfg(unix)]
+mod agent_transport;
 mod appimage;
 mod config;
 mod credentials;
 mod disk;
 mod editor;
+mod identities;
 mod local_pty;
 mod log_stream;
 mod models;
@@ -12,6 +15,7 @@ mod quick;
 mod remote_edit;
 mod remote_integration;
 mod ssh;
+mod ssh_config;
 mod storage;
 mod terminal;
 mod tier3;
@@ -222,9 +226,53 @@ fn get_state(state: State<'_, AppState>) -> Result<AppStateSnapshot, AppError> {
     Ok(AppStateSnapshot {
         version: APP_VERSION,
         servers: state.store.list_servers()?,
+        identities: state.store.list_identities()?,
         ssh_keys,
         ssh_config_entries,
     })
+}
+
+#[tauri::command(async)]
+fn find_onepassword_agent() -> Result<String, AppError> {
+    Ok(identities::find_onepassword_agent()?)
+}
+
+#[tauri::command(async)]
+fn check_ssh_agent(reference: String) -> Result<usize, AppError> {
+    Ok(identities::probe_agent(&reference)?)
+}
+
+#[tauri::command(async)]
+fn create_identity(
+    state: State<'_, AppState>,
+    name: String,
+    username: String,
+    reference: String,
+) -> Result<(), AppError> {
+    state.store.create_identity(&identities::Identity {
+        id: uuid::Uuid::new_v4().to_string(),
+        name,
+        username,
+        provider: identities::IdentityProvider::SshAgent,
+        reference,
+    })?;
+    Ok(())
+}
+
+#[tauri::command(async)]
+fn delete_identity(state: State<'_, AppState>, identity_id: String) -> Result<(), AppError> {
+    state.store.delete_identity(&identity_id)?;
+    Ok(())
+}
+
+#[tauri::command(async)]
+fn set_connection_group(
+    state: State<'_, AppState>,
+    server_ids: Vec<String>,
+    group_name: String,
+) -> Result<(), AppError> {
+    state.store.set_connection_group(&server_ids, &group_name)?;
+    Ok(())
 }
 
 #[tauri::command(async)]
@@ -1503,84 +1551,19 @@ fn scan_ssh_material() -> Result<(Vec<SshKey>, Vec<SshConfigEntry>), String> {
 }
 
 fn parse_ssh_config(path: &std::path::Path) -> Vec<SshConfigEntry> {
-    let Ok(content) = fs::read_to_string(path) else {
-        return Vec::new();
-    };
-    let mut aliases: Vec<String> = Vec::new();
-    let mut host: Option<String> = None;
-    let mut username: Option<String> = None;
-    let mut port: Option<u16> = None;
-    let mut key_path: Option<String> = None;
-    let mut entries = Vec::new();
-    let flush = |entries: &mut Vec<SshConfigEntry>,
-                 aliases: &mut Vec<String>,
-                 host: &mut Option<String>,
-                 username: &mut Option<String>,
-                 port: &mut Option<u16>,
-                 key_path: &mut Option<String>| {
-        for alias in aliases.drain(..) {
-            if alias.contains('*') || alias.contains('?') || alias.starts_with('!') {
-                continue;
-            }
-            entries.push(SshConfigEntry {
-                alias,
-                host: host.clone(),
-                username: username.clone(),
-                port: *port,
-                key_path: key_path.clone().map(|value| ssh_config_path(&value)),
-            });
-        }
-        *host = None;
-        *username = None;
-        *port = None;
-        *key_path = None;
-    };
-    for line in content.lines() {
-        let line = line.split('#').next().unwrap_or_default().trim();
-        let mut fields = line.split_whitespace();
-        let Some(key) = fields.next() else {
-            continue;
-        };
-        let value = fields.collect::<Vec<_>>().join(" ");
-        match key.to_ascii_lowercase().as_str() {
-            "host" => {
-                flush(
-                    &mut entries,
-                    &mut aliases,
-                    &mut host,
-                    &mut username,
-                    &mut port,
-                    &mut key_path,
-                );
-                aliases = value.split_whitespace().map(str::to_string).collect();
-            }
-            "hostname" => host = Some(value),
-            "user" => username = Some(value),
-            "port" => port = value.parse().ok(),
-            "identityfile" => key_path = Some(value),
-            _ => {}
-        }
-    }
-    flush(
-        &mut entries,
-        &mut aliases,
-        &mut host,
-        &mut username,
-        &mut port,
-        &mut key_path,
-    );
-    entries.sort_by(|left, right| left.alias.cmp(&right.alias));
-    entries
+    ssh_config::read(path).unwrap_or_default()
 }
 
-fn ssh_config_path(value: &str) -> String {
-    if value.starts_with("~/") {
+#[tauri::command]
+fn read_ssh_config(path: String) -> Result<Vec<SshConfigEntry>, String> {
+    let path = if let Some(tail) = path.strip_prefix("~/") {
         dirs::home_dir()
-            .map(|home| home.join(&value[2..]).to_string_lossy().to_string())
-            .unwrap_or_else(|| value.to_string())
+            .ok_or("Home directory unavailable")?
+            .join(tail)
     } else {
-        value.to_string()
-    }
+        std::path::PathBuf::from(path)
+    };
+    ssh_config::read(&path)
 }
 
 #[derive(Clone, Copy)]
@@ -1753,6 +1736,12 @@ pub fn run() {
             reset_credentials,
             get_state,
             save_server,
+            set_connection_group,
+            read_ssh_config,
+            create_identity,
+            find_onepassword_agent,
+            check_ssh_agent,
+            delete_identity,
             rename_server,
             delete_server,
             duplicate_server,
