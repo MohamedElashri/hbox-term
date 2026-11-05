@@ -3,7 +3,7 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/MohamedElashri/ternway/main/install.sh | sh
 #
-# TERNWAY_VERSION=v0.1.0 pins a release (default: latest). An authenticated `gh` CLI is used
+# TERNWAY_VERSION=v0.2.0 pins a release (default: latest). An authenticated `gh` CLI is used
 # when available, which avoids API rate limits.
 set -eu
 
