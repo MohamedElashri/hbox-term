@@ -8,8 +8,9 @@ import { renderTransferQueue, type TransferJob } from "./transfer-queue-view";
 import { syncTransferToast } from "./toasts";
 import type { TransferProgress } from "../types";
 let jobs: TransferJob[] = [];
+let notice: string | null = null;
 let running = false;
-export async function refreshTransferQueue(): Promise<void> { jobs = await invoke("list_transfer_jobs"); if (state.modal === "transfers") render(); }
+export async function refreshTransferQueue(): Promise<void> { [jobs, notice] = await Promise.all([invoke<TransferJob[]>("list_transfer_jobs"), invoke<string | null>("transfer_queue_notice")]); if (state.modal === "transfers") render(); }
 export async function openTransferQueue(): Promise<void> { await refreshTransferQueue(); state.modal = "transfers"; render(); }
 export async function enqueueTransfer(serverId: string, direction: "upload" | "download", localPath: string, remotePath: string): Promise<void> {
   await invoke("enqueue_transfer", { serverId, direction, localPath, remotePath });
@@ -32,4 +33,4 @@ export async function transferAction(id: string, action: string): Promise<void> 
   await invoke("transfer_job_action", { id, action }); await refreshTransferQueue();
   if (action === "retry" || action === "replace") void runQueue();
 }
-export function transferQueueContent(): string { return renderTransferQueue(jobs); }
+export function transferQueueContent(): string { return renderTransferQueue(jobs, notice); }

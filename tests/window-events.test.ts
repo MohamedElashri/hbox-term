@@ -24,3 +24,14 @@ test("targeted quit and native-menu events only reach their intended window", as
   emitTo("other", "prepare-quit", { token: "q", windowLabel: "other" });
   assert.equal(seen.at(-1), "other:q");
 });
+
+test("restart intent reaches only the intended window's save barrier", async () => {
+  let handler: ((event: {payload: unknown}) => void) | undefined;
+  const listen: WindowListener = async (name, callback) => { if (name === "prepare-quit") handler = callback as (event: {payload: unknown}) => void; return () => {}; };
+  const calls: unknown[] = [];
+  await installWindowEvents("main", { quit: (token, restart) => calls.push({token,restart}), about: () => {}, updates: () => {} }, listen);
+  handler!({payload:{token:"restart",windowLabel:"other",restart:true}});
+  assert.deepEqual(calls,[]);
+  handler!({payload:{token:"restart",windowLabel:"main",restart:true}});
+  assert.deepEqual(calls,[{token:"restart",restart:true}]);
+});

@@ -23,6 +23,22 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v7
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+
+      - name: Require production signing and notarization credentials
+        env:
+          HAS_TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
+          HAS_APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE != '' }}
+          HAS_APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD != '' }}
+          HAS_APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER != '' }}
+          HAS_APPLE_API_KEY: ${{ secrets.APPLE_API_KEY != '' }}
+          HAS_APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY != '' }}
+          APPLE_SIGNING_IDENTITY: ${{ vars.APPLE_SIGNING_IDENTITY }}
+        run: node tools/release-credentials.mjs
+
       - name: Check version, changelog and signing key
         env:
           RELEASE_TAG: ${{ github.ref_name }}
@@ -72,7 +88,11 @@ jobs:
           releases_endpoint="repos/${GITHUB_REPOSITORY}/releases?per_page=100"
           release_json="$(gh api "$releases_endpoint" | jq -c --arg tag "$RELEASE_TAG" '[.[] | select(.tag_name == $tag)][0]')"
           if [[ "$release_json" != "null" ]]; then
-            echo "Reusing existing release for ${RELEASE_TAG}."
+            if [[ "$(jq -r '.draft' <<<"$release_json")" != true ]]; then
+              echo 'Published releases are immutable; use a new tag instead of replacing their assets.' >&2
+              exit 1
+            fi
+            echo "Reusing draft release for ${RELEASE_TAG}."
           else
             echo "Creating draft release for ${RELEASE_TAG}."
             prerelease=()
@@ -153,10 +173,11 @@ jobs:
           workspaces: ./src-tauri -> target
 
       - name: Install Linux system dependencies
+        timeout-minutes: 10
         if: matrix.os == 'linux'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 update
+          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 install -y \
             build-essential \
             file \
             libayatana-appindicator3-dev \
@@ -171,6 +192,18 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Prepare notarization API key
+        if: matrix.os == 'macos'
+        env:
+          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+        run: |
+          node --input-type=module <<'JS'
+          import {writeFileSync} from 'node:fs';
+          import {join} from 'node:path';
+          const path = join(process.env.RUNNER_TEMP, 'ternway-notarization.p8');
+          writeFileSync(path, process.env.APPLE_API_PRIVATE_KEY, {mode: 0o600});
+          JS
+
       - name: Build and upload bundles
         uses: tauri-apps/tauri-action@v1
         env:
@@ -178,9 +211,12 @@ jobs:
           # Signs the updater artifacts (.AppImage, .deb, .rpm, .app.tar.gz) for in-app updates.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # Ad-hoc signing avoids Apple Silicon apps being reported as damaged.
-          # It is not notarization; users may still need to approve the app in Privacy & Security.
-          APPLE_SIGNING_IDENTITY: ${{ matrix.os == 'macos' && '-' || '' }}
+          APPLE_SIGNING_IDENTITY: ${{ matrix.os == 'macos' && vars.APPLE_SIGNING_IDENTITY || '' }}
+          APPLE_CERTIFICATE: ${{ matrix.os == 'macos' && secrets.APPLE_CERTIFICATE || '' }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ matrix.os == 'macos' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
+          APPLE_API_ISSUER: ${{ matrix.os == 'macos' && secrets.APPLE_API_ISSUER || '' }}
+          APPLE_API_KEY: ${{ matrix.os == 'macos' && secrets.APPLE_API_KEY || '' }}
+          APPLE_API_KEY_PATH: ${{ matrix.os == 'macos' && format('{0}/ternway-notarization.p8', runner.temp) || '' }}
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
           tagName: ${{ env.RELEASE_TAG }}
@@ -189,6 +225,21 @@ jobs:
           uploadUpdaterJson: false
           uploadUpdaterSignatures: true
           args: --target ${{ matrix.rust_target }}
+
+      - name: Verify macOS signing, notarization and stapled tickets
+        if: matrix.os == 'macos'
+        env:
+          RUST_TARGET: ${{ matrix.rust_target }}
+        run: |
+          set -euo pipefail
+          app="src-tauri/target/$RUST_TARGET/release/bundle/macos/Ternway.app"
+          dmg="$(find "src-tauri/target/$RUST_TARGET/release/bundle/dmg" -maxdepth 1 -name '*.dmg' -print -quit)"
+          test -n "$dmg"
+          bash tools/verify-macos-release.sh "$app" "$dmg"
+
+      - name: Remove notarization key file
+        if: always() && matrix.os == 'macos'
+        run: rm -f "$RUNNER_TEMP/ternway-notarization.p8"
 
   publish-release:
     name: Publish release

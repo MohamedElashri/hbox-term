@@ -33,6 +33,9 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm test
+      - name: Soak terminal lifecycle and output
+        timeout-minutes: 5
+        run: make test-soak
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'

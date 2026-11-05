@@ -3,12 +3,21 @@ use std::{
     collections::{BTreeSet, HashMap, HashSet, VecDeque},
     sync::{
         atomic::{AtomicBool, Ordering},
-        Mutex,
+        mpsc, Mutex,
     },
 };
 use tauri::{
     AppHandle, Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent,
 };
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ShutdownIntent {
+    Quit,
+    Restart,
+}
+
+type ShutdownRequest = (String, VecDeque<String>, ShutdownIntent);
+type ShutdownReply = (String, mpsc::Sender<Result<(), String>>);
 
 #[derive(Default)]
 pub(crate) struct DesktopWindows {
@@ -16,7 +25,8 @@ pub(crate) struct DesktopWindows {
     owners: Mutex<HashMap<String, String>>,
     log_owners: Mutex<HashMap<String, String>>,
     no_restore: Mutex<HashSet<String>>,
-    quit: Mutex<Option<(String, VecDeque<String>)>>,
+    quit: Mutex<Option<ShutdownRequest>>,
+    quit_reply: Mutex<Option<ShutdownReply>>,
     pub allow_exit: AtomicBool,
 }
 pub(crate) fn regular(label: &str) -> bool {
@@ -250,9 +260,47 @@ pub(crate) fn focused(app: &AppHandle) -> Option<WebviewWindow> {
         .or_else(|| windows.into_values().find(|w| regular(w.label())))
 }
 pub(crate) fn request_quit(app: &AppHandle) -> Result<(), String> {
+    request_shutdown(app, ShutdownIntent::Quit, None)
+}
+
+pub(crate) fn request_restart(
+    app: &AppHandle,
+) -> Result<mpsc::Receiver<Result<(), String>>, String> {
+    let (send, receive) = mpsc::channel();
+    request_shutdown(app, ShutdownIntent::Restart, Some(send))?;
+    Ok(receive)
+}
+fn finish_shutdown(app: &AppHandle, intent: ShutdownIntent) {
+    app.state::<DesktopWindows>()
+        .allow_exit
+        .store(true, Ordering::SeqCst);
+    match intent {
+        ShutdownIntent::Quit => app.exit(0),
+        ShutdownIntent::Restart => app.request_restart(),
+    }
+}
+fn notify_reply(app: &AppHandle, token: &str, result: Result<(), String>) {
+    if let Ok(mut reply) = app.state::<DesktopWindows>().quit_reply.lock() {
+        if reply.as_ref().is_some_and(|(current, _)| current == token) {
+            if let Some((_, send)) = reply.take() {
+                let _ = send.send(result);
+            }
+        }
+    }
+}
+fn request_shutdown(
+    app: &AppHandle,
+    intent: ShutdownIntent,
+    reply: Option<mpsc::Sender<Result<(), String>>>,
+) -> Result<(), String> {
     let state = app.state::<DesktopWindows>();
-    if state.quit.lock().map_err(|e| e.to_string())?.is_some() {
-        return Ok(());
+    let mut request = state.quit.lock().map_err(|e| e.to_string())?;
+    if request.is_some() {
+        return if intent == ShutdownIntent::Quit {
+            Ok(())
+        } else {
+            Err("Ternway is already preparing to close; finish or cancel that request first".into())
+        };
     }
     let windows = app.webview_windows();
     let mut labels = windows
@@ -267,14 +315,50 @@ pub(crate) fn request_quit(app: &AppHandle) -> Result<(), String> {
         }
     }
     if labels.is_empty() {
-        state.allow_exit.store(true, Ordering::SeqCst);
-        app.exit(0);
+        if let Some(reply) = reply {
+            let _ = reply.send(Ok(()));
+        }
+        drop(request);
+        finish_shutdown(app, intent);
         return Ok(());
     }
     let token = uuid::Uuid::new_v4().to_string();
-    *state.quit.lock().map_err(|e| e.to_string())? = Some((token.clone(), labels.into()));
-    emit_next_quit(app, &token)
+    if let Some(reply) = reply {
+        *state.quit_reply.lock().map_err(|e| e.to_string())? = Some((token.clone(), reply));
+    }
+    *request = Some((token.clone(), labels.into(), intent));
+    drop(request);
+    let handle = app.clone();
+    let deadline_token = token.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_secs(120));
+        let state = handle.state::<DesktopWindows>();
+        if let Ok(mut request) = state.quit.lock() {
+            if request
+                .as_ref()
+                .is_some_and(|(token, _, _)| token == &deadline_token)
+            {
+                *request = None;
+                drop(request);
+                notify_reply(
+                    &handle,
+                    &deadline_token,
+                    Err(
+                        "A window did not finish saving; restart was cancelled without closing it"
+                            .into(),
+                    ),
+                );
+                let _=handle.emit("shutdown-aborted",serde_json::json!({"token":deadline_token,"message":"A window did not finish saving. Close or restart was cancelled."}));
+            }
+        };
+    });
+    if let Err(error) = emit_next_quit(app, &token) {
+        notify_reply(app, &token, Err(error.clone()));
+        return Err(error);
+    }
+    Ok(())
 }
+
 fn emit_next_quit(app: &AppHandle, token: &str) -> Result<(), String> {
     let next = app
         .state::<DesktopWindows>()
@@ -282,12 +366,12 @@ fn emit_next_quit(app: &AppHandle, token: &str) -> Result<(), String> {
         .lock()
         .map_err(|e| e.to_string())?
         .as_ref()
-        .and_then(|(current, pending)| {
+        .and_then(|(current, pending, intent)| {
             (current == token)
-                .then(|| pending.front().cloned())
+                .then(|| pending.front().cloned().map(|label| (label, *intent)))
                 .flatten()
         });
-    if let Some(label) = next {
+    if let Some((label, intent)) = next {
         if let Some(window) = app.get_webview_window(&label) {
             let _ = window.show();
             let _ = window.unminimize();
@@ -295,7 +379,7 @@ fn emit_next_quit(app: &AppHandle, token: &str) -> Result<(), String> {
             if let Err(error) = window.emit_to(
                 window.label(),
                 "prepare-quit",
-                serde_json::json!({"token":token,"windowLabel":label}),
+                serde_json::json!({"token":token,"windowLabel":label,"restart":intent==ShutdownIntent::Restart}),
             ) {
                 *app.state::<DesktopWindows>()
                     .quit
@@ -309,39 +393,38 @@ fn emit_next_quit(app: &AppHandle, token: &str) -> Result<(), String> {
     }
     Ok(())
 }
-pub(crate) fn pending_quit(app: &AppHandle, label: &str) -> Option<String> {
+pub(crate) fn pending_quit(app: &AppHandle, label: &str) -> Option<serde_json::Value> {
     app.state::<DesktopWindows>()
         .quit
         .lock()
         .ok()
         .and_then(|request| {
-            request.as_ref().and_then(|(token, pending)| {
-                (pending.front().is_some_and(|next| next == label)).then(|| token.clone())
+            request.as_ref().and_then(|(token, pending, intent)| {
+                (pending.front().is_some_and(|next| next == label)).then(|| serde_json::json!({"token":token,"restart":intent==&ShutdownIntent::Restart}))
             })
         })
 }
 fn acknowledge(
-    request: &mut Option<(String, VecDeque<String>)>,
+    request: &mut Option<ShutdownRequest>,
     label: &str,
     token: &str,
     ready: bool,
-) -> bool {
-    let Some((current, pending)) = request.as_mut() else {
-        return false;
-    };
+) -> Option<ShutdownIntent> {
+    let (current, pending, intent) = request.as_mut()?;
     if current != token || !pending.front().is_some_and(|next| next == label) {
-        return false;
+        return None;
     }
     if !ready {
         *request = None;
-        return false;
+        return None;
     }
     pending.pop_front();
     if pending.is_empty() {
+        let intent = *intent;
         *request = None;
-        return true;
+        return Some(intent);
     }
-    false
+    None
 }
 
 pub(crate) fn acknowledge_quit(
@@ -351,20 +434,26 @@ pub(crate) fn acknowledge_quit(
     ready: bool,
 ) -> Result<(), String> {
     let state = app.state::<DesktopWindows>();
-    let should_exit = {
+    let complete = {
         let mut request = state.quit.lock().map_err(|e| e.to_string())?;
-        if !request.as_ref().is_some_and(|(current, pending)| {
+        if !request.as_ref().is_some_and(|(current, pending, _)| {
             current == token && pending.front().is_some_and(|next| next == label)
         }) {
             return Ok(());
         }
         acknowledge(&mut request, label, token, ready)
     };
-    if should_exit {
-        state.allow_exit.store(true, Ordering::SeqCst);
-        app.exit(0);
+    if let Some(intent) = complete {
+        notify_reply(app, token, Ok(()));
+        finish_shutdown(app, intent);
     } else if ready {
         emit_next_quit(app, token)?;
+    } else {
+        notify_reply(
+            app,
+            token,
+            Err("Restart cancelled; all windows remain open".into()),
+        );
     }
     Ok(())
 }
@@ -390,14 +479,18 @@ mod tests {
         let mut request = Some((
             "current".to_string(),
             VecDeque::from(["main".to_string(), "other".to_string()]),
+            ShutdownIntent::Quit,
         ));
-        assert!(!acknowledge(&mut request, "main", "previous", true));
-        assert!(!acknowledge(&mut request, "unknown", "current", true));
-        assert!(!acknowledge(&mut request, "other", "current", true)); // no prompt in a second window yet
-        assert!(!acknowledge(&mut request, "main", "current", true));
-        assert!(!acknowledge(&mut request, "main", "current", true));
+        assert!(acknowledge(&mut request, "main", "previous", true).is_none());
+        assert!(acknowledge(&mut request, "unknown", "current", true).is_none());
+        assert!(acknowledge(&mut request, "other", "current", true).is_none()); // no prompt in a second window yet
+        assert!(acknowledge(&mut request, "main", "current", true).is_none());
+        assert!(acknowledge(&mut request, "main", "current", true).is_none());
         assert!(request.is_some());
-        assert!(acknowledge(&mut request, "other", "current", true));
+        assert_eq!(
+            acknowledge(&mut request, "other", "current", true),
+            Some(ShutdownIntent::Quit)
+        );
         assert!(request.is_none());
     }
     #[test]
@@ -405,10 +498,42 @@ mod tests {
         let mut request = Some((
             "token".to_string(),
             VecDeque::from(["main".to_string(), "other".to_string()]),
+            ShutdownIntent::Quit,
         ));
-        assert!(!acknowledge(&mut request, "main", "token", false));
+        assert!(acknowledge(&mut request, "main", "token", false).is_none());
         assert!(request.is_none());
-        assert!(!acknowledge(&mut request, "other", "token", true));
+        assert!(acknowledge(&mut request, "other", "token", true).is_none());
+    }
+    #[test]
+    fn restart_requires_all_windows_and_cancellation_cannot_leak_into_a_new_quit() {
+        let mut request = Some((
+            "restart".into(),
+            VecDeque::from(["main".into(), "other".into()]),
+            ShutdownIntent::Restart,
+        ));
+        assert_eq!(acknowledge(&mut request, "main", "restart", true), None);
+        assert_eq!(acknowledge(&mut request, "other", "restart", false), None);
+        assert!(request.is_none());
+        request = Some((
+            "quit".into(),
+            VecDeque::from(["main".into()]),
+            ShutdownIntent::Quit,
+        ));
+        assert_eq!(acknowledge(&mut request, "other", "restart", true), None);
+        assert_eq!(
+            acknowledge(&mut request, "main", "quit", true),
+            Some(ShutdownIntent::Quit)
+        );
+        request = Some((
+            "new".into(),
+            VecDeque::from(["main".into(), "other".into()]),
+            ShutdownIntent::Restart,
+        ));
+        assert_eq!(acknowledge(&mut request, "main", "new", true), None);
+        assert_eq!(
+            acknowledge(&mut request, "other", "new", true),
+            Some(ShutdownIntent::Restart)
+        );
     }
     #[test]
     fn only_owned_window_labels_can_choose_session_paths() {

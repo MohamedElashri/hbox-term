@@ -38,12 +38,12 @@ let finishBootstrap: () => void;
 const windowReady = new Promise<void>(resolve => { finishBootstrap = resolve; });
 let bootstrapSucceeded = false;
 const preparedQuitTokens = new Set<string>();
-async function prepareQuit(token: string): Promise<void> {
+async function prepareQuit(token: string, restart = false): Promise<void> {
   if (preparedQuitTokens.has(token)) return;
   preparedQuitTokens.add(token);
   if (preparedQuitTokens.size > 8) preparedQuitTokens.delete(preparedQuitTokens.values().next().value!);
   await windowReady;
-  if (!await confirmTerminalClose(state.terminalTabs, "Quit Ternway", "quit")) {
+  if (!await confirmTerminalClose(state.terminalTabs, restart ? "Restart Ternway" : "Quit Ternway", "quit")) {
     await invoke("acknowledge_quit", { token, ready: false }); return;
   }
   if (!await flushRemoteEdits(state.terminalTabs)) { await invoke("acknowledge_quit", { token, ready: false }); return; }
@@ -57,15 +57,16 @@ async function prepareQuit(token: string): Promise<void> {
 async function installEventListeners(): Promise<void> {
   await installCredentialPrivacy();
   state.terminalUnlisteners.push(...await installWindowEvents(appWindow.label, {
-    quit: token => { void prepareQuit(token); },
+    quit: (token, restart) => { void prepareQuit(token, restart); },
     about: () => { void runAction("show-about"); },
     updates: () => { void runAction("check-updates"); },
   }, listen));
-  state.terminalUnlisteners.push(await listen("library-changed", () => { void refreshSnapshot(false).then(() => render()); }));
+  state.terminalUnlisteners.push(await listen("library-changed", () => { void refreshSnapshot(false).then(() => { if (!state.modal && !state.appDialogPrompt) render(); }); }));
   state.terminalUnlisteners.push(await listen("transfer-queue-changed", () => { void refreshTransferQueue(); }));
+  state.terminalUnlisteners.push(await listen<{message: string}>("shutdown-aborted", event => showToast(event.payload.message, "info")));
   // Quit can be requested before this webview has installed its event listener.
-  const pending = await invoke<string | null>("pending_quit");
-  if (pending) void prepareQuit(pending);
+  const pending = await invoke<{token: string; restart: boolean} | null>("pending_quit");
+  if (pending) void prepareQuit(pending.token, pending.restart);
   state.terminalUnlisteners.push(await listen<TerminalEvent>("log-stream-output", (event) => {
     if (state.logsViewer.streamId === event.payload.sessionId) appendLogOutput(state.logsViewer, event.payload.data, "workspace");
     else if (state.containerLogViewer?.streamId === event.payload.sessionId) appendLogOutput(state.containerLogViewer, event.payload.data, "container");
