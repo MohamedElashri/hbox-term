@@ -1,3 +1,4 @@
+import { confirmTerminalClose } from "./terminal-close";
 import { parseSavedLayout, type SavedPane, type SavedSession } from "./saved-layout";
 export type { SavedPane, SavedSession } from "./saved-layout";
 import { freshSessionRequest } from "./connection-lifecycle";
@@ -322,9 +323,10 @@ async function openTerminal(placement: Placement, command?: string, title?: stri
 }
 
 /** Closes one pane. The local workspace always keeps at least one shell. */
-export async function closeTerminal(tabId: string): Promise<void> {
+export async function closeTerminal(tabId: string, confirmed = false): Promise<void> {
   const tab = state.terminalTabs.find((item) => item.id === tabId);
   if (!tab) return;
+  if (!confirmed && !await confirmTerminalClose([tab], "Close terminal pane")) return;
   if (tab.connecting && (!state.activeOperation || state.activeOperation.serverId === tab.serverId)) cancelCurrentOperation();
   if (tab.sessionId && !tab.closed) await invoke("close_terminal", { sessionId: tab.sessionId }).catch(() => undefined);
   disposeTerminalSurfaces([tab]);
@@ -337,7 +339,9 @@ export async function closeTerminal(tabId: string): Promise<void> {
 export async function closeTerminalGroup(groupId: string): Promise<void> {
   const group = state.terminalGroups.find((item) => item.id === groupId);
   if (!group) return;
-  for (const id of leaves(group.root)) await closeTerminal(id);
+  const tabs = state.terminalTabs.filter(tab => leaves(group.root).includes(tab.id));
+  if (!await confirmTerminalClose(tabs, "Close terminal tab")) return;
+  for (const id of leaves(group.root)) await closeTerminal(id, true);
 }
 
 export function clearActiveTerminal(): void {

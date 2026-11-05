@@ -21,6 +21,59 @@ pub enum TerminalCommand {
     /// Output was acknowledged; wakes a session paused by flow control.
     Wake,
     Close,
+    Activity(mpsc::Sender<TerminalActivity>),
+}
+
+#[derive(Debug, Clone, Copy, serde::Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum TerminalActivity {
+    Idle,
+    Busy,
+    Unknown,
+    Closed,
+}
+
+/// Query existing local PTYs without issuing shell commands to a terminal or SSH host.
+pub fn activities(
+    sessions: &TerminalSessions,
+    ids: &[String],
+) -> Result<HashMap<String, TerminalActivity>, String> {
+    if ids.len() > 512 {
+        return Err("Too many terminals to inspect".into());
+    }
+    let mut result = HashMap::new();
+    let mut pending = Vec::new();
+    {
+        let sessions = sessions.lock().map_err(|e| e.to_string())?;
+        for id in ids {
+            match sessions.get(id) {
+                None => {
+                    result.insert(id.clone(), TerminalActivity::Closed);
+                }
+                Some(session) if session.server_id != LOCAL_SERVER_ID => {
+                    result.insert(id.clone(), TerminalActivity::Unknown);
+                }
+                Some(session) => {
+                    let (send, receive) = mpsc::channel();
+                    if session.sender.send(TerminalCommand::Activity(send)).is_ok() {
+                        pending.push((id.clone(), receive));
+                    } else {
+                        result.insert(id.clone(), TerminalActivity::Closed);
+                    }
+                }
+            }
+        }
+    }
+    let deadline = Instant::now() + Duration::from_secs(2);
+    for (id, receive) in pending {
+        result.insert(
+            id,
+            receive
+                .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+                .unwrap_or(TerminalActivity::Unknown),
+        );
+    }
+    Ok(result)
 }
 
 const MAX_PENDING_INPUT_BYTES: usize = 1024 * 1024;
@@ -194,6 +247,9 @@ pub fn start(
                     }
                     TerminalCommand::Resize(cols, rows) => {
                         pending_resize = Some((cols.max(20), rows.max(5)));
+                    }
+                    TerminalCommand::Activity(reply) => {
+                        let _ = reply.send(TerminalActivity::Unknown);
                     }
                     TerminalCommand::Wake => {}
                     TerminalCommand::Close => {

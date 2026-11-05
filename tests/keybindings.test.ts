@@ -60,3 +60,12 @@ test("global quick terminal hotkey as an accelerator", () => {
   assert.equal(quickTerminalShortcut(["global:alt+f12=toggle_quick_terminal", "global:ctrl+1=toggle_quick_terminal"]), "Control+Digit1");
   assert.equal(quickTerminalShortcut(["ctrl+grave_accent=toggle_quick_terminal", "global:ctrl+t=new_tab"]), null);
 });
+
+test("IME and AltGr text never trigger terminal shortcuts", () => {
+  const bindings = parseKeybindings([...MACOS_DEFAULTS, ...LINUX_DEFAULTS]);
+  for (const event of [
+    { ...key("KeyD", { meta: true }, "Process"), isComposing: true },
+    { ...key("KeyD", { meta: true }, "Dead"), keyCode: 229 },
+    { ...key("ArrowLeft", { ctrl: true, alt: true }), getModifierState: (name: string) => name === "AltGraph" },
+  ]) assert.equal(matchKeybinding(bindings, event), undefined);
+});

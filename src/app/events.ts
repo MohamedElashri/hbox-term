@@ -1,3 +1,4 @@
+import { composingText } from "./keybindings";
 import { openWorkspaceLibrary, saveWorkspaceLayout, openSavedWorkspace, deleteSavedWorkspace } from "./workspace-library";
 import { loadAboutMetadata, aboutBuildSummary } from "./about";
 import { BRAND } from "./brand";
@@ -618,6 +619,7 @@ export async function handleSubmit(event: SubmitEvent): Promise<void> {
 }
 
 export function handleKeydown(event: KeyboardEvent): void {
+  if (composingText(event)) return;
   const customPicker = (event.target as HTMLElement).closest<HTMLElement>(".custom-select");
   if (customPicker) {
     const trigger = customPicker.querySelector<HTMLButtonElement>(".custom-select-trigger");

@@ -95,7 +95,7 @@ const CODE_KEYS: Record<string, string> = {
   Backspace: "backspace", Delete: "delete", Insert: "insert", Home: "home", End: "end", NumpadAdd: "plus",
 };
 
-interface KeyEventLike { code: string; key: string; ctrlKey: boolean; shiftKey: boolean; altKey: boolean; metaKey: boolean }
+interface KeyEventLike { isComposing?: boolean; keyCode?: number; getModifierState?: (key: string) => boolean; code: string; key: string; ctrlKey: boolean; shiftKey: boolean; altKey: boolean; metaKey: boolean }
 
 /** Physical key names for an event (layout independent), plus `plus` when the key produces "+". */
 export function eventKeys(event: KeyEventLike): string[] {
@@ -110,7 +110,13 @@ export function eventKeys(event: KeyEventLike): string[] {
   return names;
 }
 
+/** Composition keys and AltGr belong to text input, including legacy WebKit IME events. */
+export function composingText(event: { isComposing?: boolean; keyCode?: number; getModifierState?: (key: string) => boolean }): boolean {
+  return event.isComposing === true || event.keyCode === 229 || event.getModifierState?.("AltGraph") === true;
+}
+
 export function matchKeybinding(bindings: Keybinding[], event: KeyEventLike): KeyAction | undefined {
+  if (composingText(event)) return undefined;
   const keys = eventKeys(event);
   // Later bindings win, so a config line overrides a default for the same trigger.
   for (let index = bindings.length - 1; index >= 0; index--) {

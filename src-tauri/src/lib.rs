@@ -1602,6 +1602,11 @@ fn terminal_ack(
     Ok(terminal::ack(&state.terminals, &session_id, bytes)?)
 }
 
+#[tauri::command(async)]
+fn terminal_activities(state: State<'_, AppState>, session_ids: Vec<String>) -> Result<std::collections::HashMap<String, terminal::TerminalActivity>, AppError> {
+    Ok(terminal::activities(&state.terminals, &session_ids)?)
+}
+
 #[tauri::command]
 fn close_terminal(state: State<'_, AppState>, session_id: String) -> Result<(), AppError> {
     Ok(terminal::close(&state.terminals, &session_id)?)
@@ -1996,7 +2001,8 @@ pub fn run() {
             finish_remote_edit,
             load_theme,
             open_config_file,
-            close_terminal
+            close_terminal,
+            terminal_activities
         ])
         .build(tauri::generate_context!())
         .expect("error while building ternway application")

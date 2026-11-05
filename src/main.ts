@@ -1,3 +1,4 @@
+import { confirmTerminalClose } from "./app/terminal-close";
 import { cancelCurrentOperation } from "./app/session";
 import { watchSharedSsh } from "./app/shared-ssh";
 import { rememberGroup } from "./app/connection-groups";
@@ -16,7 +17,7 @@ import { transferUpload } from "./app/actions/remote";
 import { errorText } from "./app/command-client";
 import { handleChange, handleClick, handleInput, handleKeydown, handleSubmit, runAction, workspaceTabDrag } from "./app/events";
 import { render } from "./app/render";
-import { matchKeybinding } from "./app/keybindings";
+import { composingText, matchKeybinding } from "./app/keybindings";
 import { appWindow, DEFAULT_INTERFACE_SCALE, quickMode, root, state } from "./app/state";
 import { togglePalette } from "./app/palette";
 import { loadTerminalConfig } from "./app/terminal-config";
@@ -32,8 +33,15 @@ import type { CredentialStatus, TerminalEvent, TransferProgress } from "./types"
 let finishBootstrap: () => void;
 const windowReady = new Promise<void>(resolve => { finishBootstrap = resolve; });
 let bootstrapSucceeded = false;
+const preparedQuitTokens = new Set<string>();
 async function prepareQuit(token: string): Promise<void> {
+  if (preparedQuitTokens.has(token)) return;
+  preparedQuitTokens.add(token);
+  if (preparedQuitTokens.size > 8) preparedQuitTokens.delete(preparedQuitTokens.values().next().value!);
   await windowReady;
+  if (!await confirmTerminalClose(state.terminalTabs, "Quit Ternway")) {
+    await invoke("acknowledge_quit", { token, ready: false }); return;
+  }
   cancelCurrentOperation();
   let ready = false;
   try { if (!quickMode && bootstrapSucceeded) await saveSession(); ready = true; }
@@ -111,6 +119,7 @@ root.addEventListener("click", (event) => {
 window.addEventListener("contextmenu", (event) => { event.preventDefault(); }, { capture: true });
 document.addEventListener("focusin", event => containModalFocus(root, event));
 window.addEventListener("keydown", (event) => {
+  if (composingText(event)) return;
   // This listener runs in capture phase, before the picker's key handler.
   const openPicker = root.querySelector<HTMLElement>(".custom-select.open");
   if (event.key === "Escape" && openPicker) {
@@ -195,6 +204,7 @@ function startSessionSaving(): void {
     void saveSession().catch(error => showToast(`Could not save the workspace: ${errorText(error)}`, "info"));
   }, SESSION_SAVE_INTERVAL_MS);
   void appWindow.onCloseRequested(async event => {
+    if (!await confirmTerminalClose(state.terminalTabs, "Close window")) { event.preventDefault(); return; }
     cancelCurrentOperation();
     try {
       await saveSession();

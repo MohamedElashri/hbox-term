@@ -22,6 +22,8 @@ export interface TerminalConfig {
   theme: string | null;
   colors: ColorConfig;
   cursorStyle: CursorStyle;
+  macosOptionAsAlt: boolean;
+  confirmCloseSurface: boolean;
   /** null: blink unless the program turns it off (Ghostty's default). */
   cursorBlink: boolean | null;
   copyOnSelect: "false" | "true" | "clipboard";
@@ -75,6 +77,8 @@ export const DEFAULT_CONFIG: TerminalConfig = {
   theme: null,
   colors: { palette: {} },
   cursorStyle: "block",
+  macosOptionAsAlt: false,
+  confirmCloseSurface: true,
   cursorBlink: null,
   copyOnSelect: "true",
   pasteProtection: true,
@@ -166,6 +170,16 @@ export function parseConfig(entries: ConfigEntry[]): ParsedConfig {
       case "font-size": {
         const size = Number(value);
         if (size > 0 && size <= 200) config.fontSize = size; else invalid();
+        break;
+      }
+      case "confirm-close-surface": {
+        const flag = parseBoolean(value);
+        if (flag === null) invalid(); else config.confirmCloseSurface = flag;
+        break;
+      }
+      case "macos-option-as-alt": {
+        const flag = parseBoolean(value);
+        if (flag === null) invalid(); else config.macosOptionAsAlt = flag;
         break;
       }
       case "theme": config.theme = value || null; break;

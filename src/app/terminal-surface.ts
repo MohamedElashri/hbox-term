@@ -32,6 +32,7 @@ export interface TerminalAppearance {
   fontSize: number;
   cursorStyle: "block" | "bar" | "underline";
   cursorBlink: boolean;
+  macOptionIsMeta: boolean;
   scrollback: number;
 }
 
@@ -91,6 +92,7 @@ export class TerminalSurface {
     this.term = new Terminal({
       allowProposedApi: true,
       cursorBlink: appearance.cursorBlink,
+      macOptionIsMeta: appearance.macOptionIsMeta,
       cursorStyle: appearance.cursorStyle,
       fontFamily: appearance.fontFamily,
       fontSize: appearance.fontSize,
@@ -136,6 +138,7 @@ export class TerminalSurface {
     }
     if (options.cursorStyle !== appearance.cursorStyle) options.cursorStyle = appearance.cursorStyle;
     if (options.cursorBlink !== appearance.cursorBlink) options.cursorBlink = appearance.cursorBlink;
+    if (options.macOptionIsMeta !== appearance.macOptionIsMeta) options.macOptionIsMeta = appearance.macOptionIsMeta;
     if (options.scrollback !== appearance.scrollback) options.scrollback = appearance.scrollback;
     if (options.fontFamily !== appearance.fontFamily || options.fontSize !== appearance.fontSize) {
       options.fontFamily = appearance.fontFamily;

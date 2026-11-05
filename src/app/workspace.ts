@@ -1,3 +1,4 @@
+import { confirmTerminalClose } from "./terminal-close";
 import { invoke } from "@tauri-apps/api/core";
 import type { AccountSnapshot, AppStateSnapshot, AuthorizedKey, CommandResult, ComposeProject, CronJob, DiskExplorerSnapshot, FirewallSnapshot, PackagePage, Page, PortInfo, ProcessInfo, SavedCommand, SecuritySnapshot, ServiceInfo, TunnelConfig, TunnelStatus } from "../types";
 import { ensureDockerContainersForLogs } from "./actions/containers";
@@ -165,6 +166,7 @@ export async function closeWorkspaceTab(workspaceTabId: string): Promise<void> {
   const tabIndex = state.openServerTabs.findIndex((tab) => tab.id === workspaceTabId);
   if (tabIndex < 0) return;
   const closingTab = state.openServerTabs[tabIndex];
+  if (!await confirmTerminalClose(state.terminalTabs.filter(tab => tab.workspaceTabId === workspaceTabId), "Close server workspace")) return;
   if (state.activeWorkspaceTabId === workspaceTabId) cancelCurrentOperation();
   await closeWorkspaceInteractiveSessions(workspaceTabId);
   serverTabViews.delete(workspaceTabId);
