@@ -9,6 +9,7 @@ export interface ServerProfile {
   authMethod: AuthMethod;
   openSsh?: { alias: string; configPath?: string; shareConnection?: boolean };
   identityId?: string;
+  passwordReference?: { provider: "onePassword" | "bitwarden"; reference: string };
   keyPath?: string;
   jumpHostId?: string;
   groupName?: string;

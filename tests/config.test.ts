@@ -152,3 +152,11 @@ test("Option-as-Meta and close confirmation are explicit reversible preferences"
   assert.deepEqual(parsed.errors, []);
   assert.equal(parseConfig(entries("macos-option-as-alt = left")).errors.length, 1);
 });
+
+test("clipboard and saved output require explicit privacy opt-in", () => {
+  const defaults = parseConfig([]).config;
+  assert.equal(defaults.clipboardHistory, false); assert.equal(defaults.saveScrollback, false);
+  const enabled = parseConfig(entries("clipboard-history = true\nsave-scrollback = true"));
+  assert.equal(enabled.config.clipboardHistory, true); assert.equal(enabled.config.saveScrollback, true);
+  assert.equal(parseConfig(entries("clipboard-history = sometimes")).errors.length, 1);
+});

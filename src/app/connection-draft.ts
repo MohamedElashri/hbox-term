@@ -12,9 +12,15 @@ export function connectionDraft(data: Pick<FormData, "get">, id?: string): Recor
   if (authMethod !== "password" && authMethod !== "privateKey" && authMethod !== "sshAgent" && !linked) throw new Error("Choose a supported authentication method.");
   const identityId = text("identityId").trim();
   if (authMethod === "sshAgent" && !identityId) throw new Error("Choose an SSH agent identity in Settings first.");
+  const provider = text("passwordProvider");
+  if (authMethod === "password" && provider && provider !== "local") {
+    if (!["onePassword", "bitwarden"].includes(provider) || !text("passwordReference").trim()) throw new Error("Choose a password provider and enter its reference.");
+    if (text("password")) throw new Error("Leave the saved password empty when using an external provider.");
+  }
   const keyPath = text("customKeyPath").trim() || text("keyPath").trim();
   if (authMethod === "privateKey" && !keyPath) throw new Error("Choose a private key or enter its path.");
   const draft: Record<string, unknown> = {
+    passwordReference: authMethod === "password" && text("passwordProvider") && text("passwordProvider") !== "local" ? { provider: text("passwordProvider"), reference: text("passwordReference").trim() } : undefined,
     identityId: authMethod === "sshAgent" ? identityId : undefined,
     id, name: text("name").trim() || host, host, username, port, authMethod,
     keyPath: authMethod === "privateKey" ? keyPath : undefined,
@@ -25,6 +31,7 @@ export function connectionDraft(data: Pick<FormData, "get">, id?: string): Recor
     notes: text("notes"), favorite: data.get("favorite") === "on",
   };
   for (const key of ["password", "keyPassphrase", "sudoPassword"]) {
+    if (key === "password" && draft.passwordReference) continue;
     if (linked || (authMethod === "sshAgent" && key !== "sudoPassword")) continue;
     if (!id || text(key)) draft[key] = text(key);
   }

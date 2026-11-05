@@ -118,7 +118,8 @@ impl Store {
         crate::identities::migrate(&mut connection, path)?;
         connection
             .execute_batch(
-                "CREATE TABLE IF NOT EXISTS openssh_connections (
+                "CREATE TABLE IF NOT EXISTS password_references (server_id TEXT PRIMARY KEY NOT NULL REFERENCES servers(id) ON DELETE CASCADE, reference_json TEXT NOT NULL);
+                 CREATE TABLE IF NOT EXISTS openssh_connections (
             server_id TEXT PRIMARY KEY NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
             reference_json TEXT NOT NULL
         );",
@@ -161,6 +162,28 @@ impl Store {
             .into_iter()
             .find(|i| i.id == id)
             .ok_or_else(|| "The selected identity no longer exists".into())
+    }
+
+    pub fn lock_credentials(&self) {
+        self.credentials.lock();
+        if let Ok(mut passwords) = self.session_passwords.lock() {
+            passwords.clear();
+        }
+    }
+
+    pub fn credential_activity(&self) {
+        self.credentials.activity();
+    }
+
+    pub fn lock_if_idle(&self) -> bool {
+        let active = self.credentials.status().unlocked
+            || self.session_passwords.lock().is_ok_and(|p| !p.is_empty());
+        if active && self.credentials.idle() {
+            self.lock_credentials();
+            true
+        } else {
+            false
+        }
     }
 
     pub fn credential_status(&self) -> crate::models::CredentialStatus {
@@ -213,6 +236,7 @@ impl Store {
             self.credentials
                 .update_server(server_id, false, Some(password), None, None)?;
         }
+        self.credential_activity();
         self.session_passwords
             .lock()
             .map_err(|e| e.to_string())?
@@ -252,7 +276,8 @@ impl Store {
                         jump_host_id,
                         COALESCE((SELECT notes FROM server_notes WHERE server_id = servers.id), ''),
                         (SELECT identity_id FROM connection_identities WHERE server_id = servers.id),
-                        (SELECT reference_json FROM openssh_connections WHERE server_id = servers.id)
+                        (SELECT reference_json FROM openssh_connections WHERE server_id = servers.id),
+                        (SELECT reference_json FROM password_references WHERE server_id = servers.id)
                  FROM servers ORDER BY favorite DESC, name COLLATE NOCASE ASC",
             )
             .map_err(|error| format!("Could not read servers: {error}"))?;
@@ -275,7 +300,8 @@ impl Store {
                         jump_host_id,
                         COALESCE((SELECT notes FROM server_notes WHERE server_id = servers.id), ''),
                         (SELECT identity_id FROM connection_identities WHERE server_id = servers.id),
-                        (SELECT reference_json FROM openssh_connections WHERE server_id = servers.id)
+                        (SELECT reference_json FROM openssh_connections WHERE server_id = servers.id),
+                        (SELECT reference_json FROM password_references WHERE server_id = servers.id)
                  FROM servers WHERE id = ?1",
                 [id],
                 row_to_server,
@@ -287,6 +313,14 @@ impl Store {
 
     pub fn save_server(&self, draft: &ServerDraft) -> Result<ServerProfile, String> {
         let name = required(&draft.name, "server name")?;
+        if let Some(reference) = &draft.password_reference {
+            reference.validate()?;
+            if draft.auth_method != AuthMethod::Password
+                || draft.password.as_ref().is_some_and(|p| !p.is_empty())
+            {
+                return Err("A password reference requires Password authentication and an empty saved-password field".into());
+            }
+        }
         let open_ssh = if draft.auth_method == AuthMethod::OpenSsh {
             if draft.jump_host_id.is_some()
                 || [&draft.password, &draft.key_passphrase, &draft.sudo_password]
@@ -459,6 +493,12 @@ impl Store {
             tx.execute("DELETE FROM openssh_connections WHERE server_id=?1", [&id])
                 .map_err(|e| e.to_string())?;
         }
+        if let Some(reference) = &draft.password_reference {
+            tx.execute("INSERT INTO password_references(server_id, reference_json) VALUES(?1,?2) ON CONFLICT(server_id) DO UPDATE SET reference_json=excluded.reference_json", params![id, serde_json::to_string(reference).map_err(|e| e.to_string())?]).map_err(|e| e.to_string())?;
+        } else {
+            tx.execute("DELETE FROM password_references WHERE server_id=?1", [&id])
+                .map_err(|e| e.to_string())?;
+        }
         tx.commit().map_err(|e| e.to_string())?;
         drop(connection);
 
@@ -552,6 +592,7 @@ impl Store {
             port: source.port.into(),
             auth_method: source.auth_method.clone(),
             identity_id: source.identity_id,
+            password_reference: source.password_reference.clone(),
             open_ssh: source.open_ssh,
             key_path: source.key_path,
             jump_host_id: source.jump_host_id,
@@ -559,7 +600,9 @@ impl Store {
             tags: source.tags,
             notes: source.notes,
             favorite: false,
-            password: if source.auth_method == AuthMethod::OpenSsh {
+            password: if source.auth_method == AuthMethod::OpenSsh
+                || source.password_reference.is_some()
+            {
                 None
             } else {
                 self.credentials.get(id, "password")?
@@ -778,6 +821,18 @@ fn row_to_server(row: &rusqlite::Row<'_>) -> rusqlite::Result<ServerProfile> {
         username: row.get(3)?,
         port: row.get(4)?,
         identity_id: row.get(15)?,
+        password_reference: row
+            .get::<_, Option<String>>(17)?
+            .map(|value| {
+                serde_json::from_str(&value).map_err(|e| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        17,
+                        rusqlite::types::Type::Text,
+                        Box::new(e),
+                    )
+                })
+            })
+            .transpose()?,
         open_ssh: row
             .get::<_, Option<String>>(16)?
             .map(|value| {
@@ -995,5 +1050,60 @@ mod password_storage_tests {
         );
         drop(reopened);
         std::fs::remove_dir_all(dir).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod credential_privacy_tests {
+    use super::*;
+    #[test]
+    fn external_references_survive_save_duplicate_and_reopen_without_secret_reads() {
+        let dir = std::env::temp_dir().join(format!("ternway-provider-{}", Uuid::new_v4()));
+        let store = Store::open(&dir.join("db"), &dir.join("vault")).unwrap();
+        let mut draft: ServerDraft = serde_json::from_value(serde_json::json!({"name":"qa", "host":"127.0.0.1", "username":"qa", "port":22, "authMethod":"password", "passwordReference":{"provider":"onePassword", "reference":"op://Work/QA/password"}})).unwrap();
+        let saved = store.save_server(&draft).unwrap();
+        assert_eq!(saved.password_reference, draft.password_reference);
+        assert_eq!(
+            store
+                .duplicate_server(&saved.id)
+                .unwrap()
+                .password_reference,
+            draft.password_reference
+        );
+        let reopened = Store::open(&dir.join("db"), &dir.join("vault")).unwrap();
+        assert_eq!(
+            reopened.get_server(&saved.id).unwrap().password_reference,
+            draft.password_reference
+        );
+        assert!(!dir.join("vault").exists());
+        draft.auth_method = AuthMethod::OpenSsh;
+        assert!(store.save_server(&draft).is_err());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+    #[test]
+    fn lock_clears_saved_and_transient_credentials_across_store_clones() {
+        let dir = std::env::temp_dir().join(format!("ternway-lock-{}", Uuid::new_v4()));
+        let store = Store::open(&dir.join("db"), &dir.join("vault")).unwrap();
+        let draft: ServerDraft = serde_json::from_value(
+            serde_json::json!({"name":"qa", "host":"127.0.0.1", "username":"qa", "port":22}),
+        )
+        .unwrap();
+        let server = store.save_server(&draft).unwrap();
+        store.unlock_credentials("fixture vault password").unwrap();
+        store
+            .set_ssh_password(&server.id, "saved secret", true)
+            .unwrap();
+        let bytes = std::fs::read(dir.join("vault")).unwrap();
+        let clone = store.clone();
+        clone.lock_credentials();
+        assert!(!store.credential_status().unlocked);
+        assert!(store.get_secret(&server.id, "password").is_err());
+        assert_eq!(std::fs::read(dir.join("vault")).unwrap(), bytes);
+        store.unlock_credentials("fixture vault password").unwrap();
+        assert_eq!(
+            store.get_secret(&server.id, "password").unwrap().unwrap(),
+            "saved secret"
+        );
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

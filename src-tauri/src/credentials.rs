@@ -36,6 +36,7 @@ struct CredentialState {
     key: Option<Zeroizing<[u8; KEY_LENGTH]>>,
     salt: Option<[u8; SALT_LENGTH]>,
     document: CredentialDocument,
+    last_activity: std::time::Instant,
 }
 
 #[derive(Clone, Default, Deserialize, Serialize)]
@@ -82,8 +83,29 @@ impl CredentialStore {
                 key: None,
                 salt: None,
                 document: CredentialDocument::default(),
+                last_activity: std::time::Instant::now(),
             })),
         })
+    }
+
+    pub fn lock(&self) {
+        if let Ok(mut state) = self.inner.lock() {
+            state.key = None;
+            state.salt = None;
+            state.document = CredentialDocument::default();
+        }
+    }
+
+    pub fn activity(&self) {
+        if let Ok(mut state) = self.inner.lock() {
+            state.last_activity = std::time::Instant::now();
+        }
+    }
+
+    pub fn idle(&self) -> bool {
+        self.inner
+            .lock()
+            .is_ok_and(|s| s.last_activity.elapsed() >= std::time::Duration::from_secs(15 * 60))
     }
 
     pub fn status(&self) -> CredentialStatus {
@@ -123,6 +145,7 @@ impl CredentialStore {
             .inner
             .lock()
             .map_err(|_| "Credential vault lock was poisoned".to_string())?;
+        state.last_activity = std::time::Instant::now();
         if state.path.exists() {
             let (salt, document) = decrypt_file(&state.path, password)?;
             let key = derive_key(password, &salt)?;
@@ -447,4 +470,24 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), String> {
         let _ = fs::remove_file(&temporary_path);
     }
     result
+}
+
+#[cfg(test)]
+mod lock_tests {
+    use super::*;
+    #[test]
+    fn idle_deadline_tracks_activity_and_lock_discards_plaintext_and_key() {
+        let path = std::env::temp_dir().join(format!("ternway-idle-{}", Uuid::new_v4()));
+        let vault = CredentialStore::open(&path).unwrap();
+        vault.unlock("fixture vault password").unwrap();
+        vault.inner.lock().unwrap().last_activity =
+            std::time::Instant::now() - std::time::Duration::from_secs(901);
+        assert!(vault.idle());
+        vault.activity();
+        assert!(!vault.idle());
+        vault.lock();
+        let state = vault.inner.lock().unwrap();
+        assert!(state.key.is_none() && state.salt.is_none() && state.document.servers.is_empty());
+        assert!(!path.exists());
+    }
 }

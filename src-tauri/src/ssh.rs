@@ -115,7 +115,7 @@ impl SshClient {
         visited.push(profile.id.clone());
         let session = open_session(profile, cancellation, store, visited)?;
         verify_host_key(&session, profile)?;
-        authenticate(&session, profile, store)?;
+        authenticate_with_cancellation(&session, profile, store, cancellation)?;
         session.set_keepalive(true, KEEPALIVE_INTERVAL_SECONDS);
         ensure_not_cancelled(cancellation)?;
         visited.pop();
@@ -678,7 +678,10 @@ fn password_required(profile: &ServerProfile, message: &str) -> String {
     )
 }
 
-fn authenticate(session: &Session, profile: &ServerProfile, store: &Store) -> Result<(), String> {
+#[cfg(test)]
+fn authenticate(session: &Session, profile: &ServerProfile, store: &Store) -> Result<(), String> { authenticate_with_cancellation(session, profile, store, None) }
+
+fn authenticate_with_cancellation(session: &Session, profile: &ServerProfile, store: &Store, cancellation: Option<&Arc<AtomicBool>>) -> Result<(), String> {
     match profile.auth_method {
         AuthMethod::OpenSsh => return Err("Use the OpenSSH terminal for this connection".into()),
         AuthMethod::SshAgent => {
@@ -720,11 +723,13 @@ fn authenticate(session: &Session, profile: &ServerProfile, store: &Store) -> Re
             }
         }
         AuthMethod::Password => {
-            let password =
-                Zeroizing::new(store.get_secret(&profile.id, "password")?.ok_or_else(|| {
-                    password_required(profile, "Enter the SSH password to connect.")
-                })?);
+            let password = if let Some(reference) = &profile.password_reference {
+                reference.retrieve(cancellation)?
+            } else {
+                Zeroizing::new(store.get_secret(&profile.id, "password")?.ok_or_else(|| password_required(profile, "Enter the SSH password to connect."))?)
+            };
 
+            ensure_not_cancelled(cancellation)?;
             let methods = session.auth_methods(&profile.username).unwrap_or("");
             let supports_password =
                 methods.is_empty() || methods.split(',').any(|m| m.trim() == "password");
@@ -776,6 +781,7 @@ fn authenticate(session: &Session, profile: &ServerProfile, store: &Store) -> Re
                     (None, None) => "Authentication rejected".to_string(),
                 };
                 store.forget_session_password(&profile.id);
+                if profile.password_reference.is_some() { return Err("The server rejected the password from your password manager. Update the referenced field and reconnect.".into()); }
                 return Err(password_required(
                     profile,
                     &format!("The SSH password was rejected. Try again. {detail}"),
@@ -1393,7 +1399,7 @@ pub(crate) fn ensure_not_cancelled(cancellation: Option<&Arc<AtomicBool>>) -> Re
 
 pub(crate) fn profile_key(profile: &ServerProfile) -> String {
     format!(
-        "{}:{}:{}:{:?}:{}:{}:{}:{:?}",
+        "{}:{}:{}:{:?}:{}:{}:{}:{:?}:{:?}",
         profile.host,
         profile.port,
         profile.username,
@@ -1401,7 +1407,8 @@ pub(crate) fn profile_key(profile: &ServerProfile) -> String {
         profile.key_path.as_deref().unwrap_or_default(),
         profile.jump_host_id.as_deref().unwrap_or_default(),
         profile.identity_id.as_deref().unwrap_or_default(),
-        profile.open_ssh
+        profile.open_ssh,
+        profile.password_reference
     )
 }
 
