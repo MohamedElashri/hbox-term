@@ -3,7 +3,7 @@
 
 export type KeyAction =
   | "copy_to_clipboard" | "paste_from_clipboard" | "select_all" | "clear_screen"
-  | "new_tab" | "close_surface" | "next_tab" | "previous_tab" | "last_tab" | `goto_tab:${number}`
+  | "new_window" | "new_tab" | "close_surface" | "next_tab" | "previous_tab" | "last_tab" | `goto_tab:${number}`
   | "new_split:right" | "new_split:down" | "toggle_split_zoom"
   | "goto_split:left" | "goto_split:right" | "goto_split:up" | "goto_split:down"
   | "increase_font_size:1" | "decrease_font_size:1" | "reset_font_size"
@@ -20,7 +20,7 @@ export interface Keybinding { trigger: Trigger; action: KeyAction }
 /** Ghostty's Linux defaults (the subset ternway implements). */
 export const LINUX_DEFAULTS = [
   "ctrl+shift+c=copy_to_clipboard", "ctrl+shift+v=paste_from_clipboard", "ctrl+shift+a=select_all",
-  "ctrl+shift+t=new_tab", "ctrl+shift+w=close_surface",
+  "ctrl+shift+n=new_window", "ctrl+shift+t=new_tab", "ctrl+shift+w=close_surface",
   "ctrl+tab=next_tab", "ctrl+shift+tab=previous_tab", "ctrl+page_down=next_tab", "ctrl+page_up=previous_tab",
   "ctrl+shift+right=next_tab", "ctrl+shift+left=previous_tab",
   ...[1, 2, 3, 4, 5, 6, 7, 8].map((n) => `alt+${n}=goto_tab:${n}`), "alt+9=last_tab",
@@ -36,7 +36,7 @@ export const LINUX_DEFAULTS = [
 /** iTerm2's macOS defaults. */
 export const MACOS_DEFAULTS = [
   "super+c=copy_to_clipboard", "super+v=paste_from_clipboard", "super+a=select_all", "super+k=clear_screen",
-  "super+t=new_tab", "super+w=close_surface",
+  "super+n=new_window", "super+t=new_tab", "super+w=close_surface",
   "super+shift+right_bracket=next_tab", "super+shift+left_bracket=previous_tab", "ctrl+tab=next_tab", "ctrl+shift+tab=previous_tab",
   ...[1, 2, 3, 4, 5, 6, 7, 8].map((n) => `super+${n}=goto_tab:${n}`), "super+9=last_tab",
   "super+d=new_split:right", "super+shift+d=new_split:down", "super+shift+enter=toggle_split_zoom",

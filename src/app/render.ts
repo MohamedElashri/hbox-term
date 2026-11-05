@@ -225,7 +225,7 @@ export function renderTabBar(): string {
   }).join("") : "";
   const local = isLocalWorkspace();
   const localTab = `<button class="workspace-tab workspace-tab-local ${local ? "active" : ""}" data-action="open-local" aria-pressed="${local}" title="Shells on this machine"><span class="workspace-tab-icon">${icon("terminalSmall")}</span><span class="workspace-tab-copy">Local</span></button>`;
-  return `<div class="workspace-tabbar">${localTab}<div class="workspace-tabs" role="tablist" aria-label="Open server workspaces">${tabContent}</div>${state.activeServerId && activeServerIsConnected() ? `<button class="button button-quiet workspace-disconnect" data-action="disconnect">Disconnect</button>` : ""}</div>`;
+  return `<div class="workspace-tabbar"><button class="button button-quiet" data-action="workspace-library" title="Saved workspace layouts">Workspaces</button>${localTab}<div class="workspace-tabs" role="tablist" aria-label="Open server workspaces">${tabContent}</div>${state.activeServerId && activeServerIsConnected() ? `<button class="button button-quiet workspace-disconnect" data-action="disconnect">Disconnect</button>` : ""}</div>`;
 }
 
 export function renderWelcome(): string {
