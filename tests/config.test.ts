@@ -142,3 +142,13 @@ test("remote shell integration is opt-in", () => {
   assert.equal(parseConfig([]).config.remoteShellIntegration, false);
   assert.equal(parseConfig(entries("remote-shell-integration = true")).config.remoteShellIntegration, true);
 });
+
+test("Option-as-Meta and close confirmation are explicit reversible preferences", () => {
+  assert.equal(parseConfig([]).config.macosOptionAsAlt, false);
+  assert.equal(parseConfig([]).config.confirmCloseSurface, true);
+  const parsed = parseConfig(entries("macos-option-as-alt = true\nconfirm-close-surface = false"));
+  assert.equal(parsed.config.macosOptionAsAlt, true);
+  assert.equal(parsed.config.confirmCloseSurface, false);
+  assert.deepEqual(parsed.errors, []);
+  assert.equal(parseConfig(entries("macos-option-as-alt = left")).errors.length, 1);
+});

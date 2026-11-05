@@ -36,6 +36,7 @@ export function terminalAppearance(profile?: string): TerminalAppearance {
     fontSize: fontSizePx(config.fontSize, platform),
     cursorStyle: config.cursorStyle,
     cursorBlink: config.cursorBlink ?? true,
+    macOptionIsMeta: config.macosOptionAsAlt,
     scrollback: scrollbackLines(config.scrollbackLimit),
   };
 }

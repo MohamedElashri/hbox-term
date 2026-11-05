@@ -5,7 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { runAction } from "./events";
 import { escapeHtml } from "./format";
 import { fuzzyFilter } from "./fuzzy";
-import { shortcutLabel, type KeyAction } from "./keybindings";
+import { composingText, shortcutLabel, type KeyAction } from "./keybindings";
 import { LOCAL_WORKSPACE_ID, platform, state } from "./state";
 import { focusedSurface, focusPane, groupTitle, openNewTerminal, pasteIntoFocused, runTerminalAction } from "./terminal";
 import { showToast } from "./toasts";
@@ -161,6 +161,7 @@ async function runSelected(index = selected): Promise<void> {
 
 input.addEventListener("input", () => { selected = 0; renderResults(); });
 input.addEventListener("keydown", (event) => {
+  if (composingText(event)) return;
   if (event.key === "ArrowDown" || event.key === "ArrowUp") {
     event.preventDefault();
     const step = event.key === "ArrowDown" ? 1 : -1;

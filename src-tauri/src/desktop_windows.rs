@@ -1,6 +1,6 @@
 //! Ordinary windows, per-window session ownership and coordinated application quit.
 use std::{
-    collections::{BTreeSet, HashMap, HashSet},
+    collections::{BTreeSet, HashMap, HashSet, VecDeque},
     sync::{
         atomic::{AtomicBool, Ordering},
         Mutex,
@@ -16,7 +16,7 @@ pub(crate) struct DesktopWindows {
     owners: Mutex<HashMap<String, String>>,
     log_owners: Mutex<HashMap<String, String>>,
     no_restore: Mutex<HashSet<String>>,
-    quit: Mutex<Option<(String, HashSet<String>)>>,
+    quit: Mutex<Option<(String, VecDeque<String>)>>,
     pub allow_exit: AtomicBool,
 }
 pub(crate) fn regular(label: &str) -> bool {
@@ -251,24 +251,60 @@ pub(crate) fn focused(app: &AppHandle) -> Option<WebviewWindow> {
 }
 pub(crate) fn request_quit(app: &AppHandle) -> Result<(), String> {
     let state = app.state::<DesktopWindows>();
+    if state.quit.lock().map_err(|e| e.to_string())?.is_some() {
+        return Ok(());
+    }
     let windows = app.webview_windows();
-    let labels = windows
+    let mut labels = windows
         .keys()
         .filter(|label| regular(label) || label.as_str() == "quick")
         .cloned()
-        .collect::<HashSet<_>>();
+        .collect::<Vec<_>>();
+    labels.sort();
+    if let Some(focused) = focused(app) {
+        if let Some(index) = labels.iter().position(|label| label == focused.label()) {
+            labels.swap(0, index);
+        }
+    }
     if labels.is_empty() {
         state.allow_exit.store(true, Ordering::SeqCst);
         app.exit(0);
         return Ok(());
     }
     let token = uuid::Uuid::new_v4().to_string();
-    *state.quit.lock().map_err(|e| e.to_string())? = Some((token.clone(), labels.clone()));
-    for label in labels {
-        if let Some(window) = windows.get(&label) {
-            window
-                .emit("prepare-quit", &token)
-                .map_err(|e| e.to_string())?;
+    *state.quit.lock().map_err(|e| e.to_string())? = Some((token.clone(), labels.into()));
+    emit_next_quit(app, &token)
+}
+fn emit_next_quit(app: &AppHandle, token: &str) -> Result<(), String> {
+    let next = app
+        .state::<DesktopWindows>()
+        .quit
+        .lock()
+        .map_err(|e| e.to_string())?
+        .as_ref()
+        .and_then(|(current, pending)| {
+            (current == token)
+                .then(|| pending.front().cloned())
+                .flatten()
+        });
+    if let Some(label) = next {
+        if let Some(window) = app.get_webview_window(&label) {
+            let _ = window.show();
+            let _ = window.unminimize();
+            let _ = window.set_focus();
+            if let Err(error) = window.emit_to(
+                window.label(),
+                "prepare-quit",
+                serde_json::json!({"token":token,"windowLabel":label}),
+            ) {
+                *app.state::<DesktopWindows>()
+                    .quit
+                    .lock()
+                    .map_err(|e| e.to_string())? = None;
+                return Err(error.to_string());
+            }
+        } else {
+            acknowledge_quit(app, &label, token, true)?;
         }
     }
     Ok(())
@@ -279,13 +315,13 @@ pub(crate) fn pending_quit(app: &AppHandle, label: &str) -> Option<String> {
         .lock()
         .ok()
         .and_then(|request| {
-            request
-                .as_ref()
-                .and_then(|(token, pending)| pending.contains(label).then(|| token.clone()))
+            request.as_ref().and_then(|(token, pending)| {
+                (pending.front().is_some_and(|next| next == label)).then(|| token.clone())
+            })
         })
 }
 fn acknowledge(
-    request: &mut Option<(String, HashSet<String>)>,
+    request: &mut Option<(String, VecDeque<String>)>,
     label: &str,
     token: &str,
     ready: bool,
@@ -293,14 +329,14 @@ fn acknowledge(
     let Some((current, pending)) = request.as_mut() else {
         return false;
     };
-    if current != token || !pending.contains(label) {
+    if current != token || !pending.front().is_some_and(|next| next == label) {
         return false;
     }
     if !ready {
         *request = None;
         return false;
     }
-    pending.remove(label);
+    pending.pop_front();
     if pending.is_empty() {
         *request = None;
         return true;
@@ -317,11 +353,18 @@ pub(crate) fn acknowledge_quit(
     let state = app.state::<DesktopWindows>();
     let should_exit = {
         let mut request = state.quit.lock().map_err(|e| e.to_string())?;
+        if !request.as_ref().is_some_and(|(current, pending)| {
+            current == token && pending.front().is_some_and(|next| next == label)
+        }) {
+            return Ok(());
+        }
         acknowledge(&mut request, label, token, ready)
     };
     if should_exit {
         state.allow_exit.store(true, Ordering::SeqCst);
         app.exit(0);
+    } else if ready {
+        emit_next_quit(app, token)?;
     }
     Ok(())
 }
@@ -346,10 +389,11 @@ mod tests {
     fn quit_waits_for_every_window_and_ignores_stale_or_duplicate_replies() {
         let mut request = Some((
             "current".to_string(),
-            HashSet::from(["main".to_string(), "other".to_string()]),
+            VecDeque::from(["main".to_string(), "other".to_string()]),
         ));
         assert!(!acknowledge(&mut request, "main", "previous", true));
         assert!(!acknowledge(&mut request, "unknown", "current", true));
+        assert!(!acknowledge(&mut request, "other", "current", true)); // no prompt in a second window yet
         assert!(!acknowledge(&mut request, "main", "current", true));
         assert!(!acknowledge(&mut request, "main", "current", true));
         assert!(request.is_some());
@@ -360,7 +404,7 @@ mod tests {
     fn a_window_can_cancel_quit_without_closing_other_windows() {
         let mut request = Some((
             "token".to_string(),
-            HashSet::from(["main".to_string(), "other".to_string()]),
+            VecDeque::from(["main".to_string(), "other".to_string()]),
         ));
         assert!(!acknowledge(&mut request, "main", "token", false));
         assert!(request.is_none());

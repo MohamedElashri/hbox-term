@@ -11,7 +11,7 @@
 
 use crate::models::{LocalTerminalRequest, TerminalStarted};
 use crate::pty_output::{OutputChannel, OutputPump, Unacked};
-use crate::terminal::{self, TerminalCommand, TerminalSessions};
+use crate::terminal::{self, TerminalActivity, TerminalCommand, TerminalSessions};
 use portable_pty::{native_pty_system, Child, CommandBuilder, MasterPty, PtySize};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -210,6 +210,7 @@ pub(crate) fn spawn(
     command.env("COLORTERM", "truecolor");
     command.env("TERM_PROGRAM", "ternway");
     command.env("TERM_PROGRAM_VERSION", env!("CARGO_PKG_VERSION"));
+    let expected_program = program_name(&command);
     let child = pty
         .slave
         .spawn_command(command)
@@ -224,7 +225,7 @@ pub(crate) fn spawn(
         .take_writer()
         .map_err(|error| format!("Could not write to the pseudo-terminal: {error}"))?;
 
-    let (events, receiver) = mpsc::channel();
+    let (events, receiver) = mpsc::sync_channel(64);
     let (commands, command_receiver) = mpsc::channel();
     let pending_input_bytes = Arc::new(AtomicUsize::new(0));
     let unacked = Unacked::default();
@@ -256,6 +257,11 @@ pub(crate) fn spawn(
             master,
             child,
             input,
+            request
+                .command
+                .as_deref()
+                .is_none_or(|command| command.trim().is_empty()),
+            expected_program,
         );
         terminal::unregister(&sessions, &thread_session_id);
     });
@@ -265,7 +271,11 @@ pub(crate) fn spawn(
     })
 }
 
-fn spawn_reader(mut reader: Box<dyn Read + Send>, events: mpsc::Sender<Event>, unacked: Unacked) {
+fn spawn_reader(
+    mut reader: Box<dyn Read + Send>,
+    events: mpsc::SyncSender<Event>,
+    unacked: Unacked,
+) {
     thread::spawn(move || {
         let mut buffer = vec![0u8; 64 * 1024];
         loop {
@@ -312,6 +322,8 @@ fn run(
     master: Box<dyn MasterPty + Send>,
     mut child: Box<dyn Child + Send + Sync>,
     input: mpsc::Sender<Vec<u8>>,
+    shell: bool,
+    expected_program: String,
 ) {
     let mut wait = IDLE_WAIT;
     let close_message = loop {
@@ -327,6 +339,14 @@ fn run(
                     pixel_width: 0,
                     pixel_height: 0,
                 });
+            }
+            Ok(Event::Command(TerminalCommand::Activity(reply))) => {
+                let _ = reply.send(job_activity(
+                    master.as_ref(),
+                    child.as_mut(),
+                    shell,
+                    &expected_program,
+                ));
             }
             Ok(Event::Command(TerminalCommand::Wake)) => {}
             Ok(Event::Command(TerminalCommand::Close)) => break None,
@@ -344,6 +364,72 @@ fn run(
             drop(master);
             hang_up(child);
         }
+    }
+}
+
+fn program_name(command: &CommandBuilder) -> String {
+    let program = if command.is_default_prog() {
+        command.get_shell()
+    } else {
+        command
+            .get_argv()
+            .first()
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    };
+    Path::new(&program)
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .trim_start_matches('-')
+        .to_string()
+}
+
+fn job_activity(
+    master: &dyn MasterPty,
+    child: &mut (dyn Child + Send + Sync),
+    shell: bool,
+    expected_program: &str,
+) -> TerminalActivity {
+    if child.try_wait().is_ok_and(|status| status.is_some()) {
+        return TerminalActivity::Closed;
+    }
+    if !shell {
+        return TerminalActivity::Busy;
+    }
+    let Some(pid) = child.process_id() else {
+        return TerminalActivity::Unknown;
+    };
+    match master.process_group_leader() {
+        Some(group) if group != pid as i32 => return TerminalActivity::Busy,
+        None => return TerminalActivity::Unknown,
+        _ => {}
+    }
+    let mut probe = std::process::Command::new("/usr/bin/pgrep");
+    probe.args(["-P", &pid.to_string()]);
+    match crate::child_process::run(probe, None, 8192, Duration::from_secs(1), None) {
+        Ok(output) if output.exit_code == 0 => TerminalActivity::Busy,
+        Ok(output) if output.exit_code == 1 => {
+            // exec replaces an idle shell without changing its PID or process group.
+            // Read only the executable name, never command arguments or environment.
+            let mut probe = std::process::Command::new("/bin/ps");
+            probe.args(["-p", &pid.to_string(), "-o", "comm="]);
+            match crate::child_process::run(probe, None, 4096, Duration::from_secs(1), None) {
+                Ok(output) if output.exit_code == 0 => {
+                    let name = Path::new(output.stdout.trim())
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy();
+                    if name.trim_start_matches('-') == expected_program {
+                        TerminalActivity::Idle
+                    } else {
+                        TerminalActivity::Busy
+                    }
+                }
+                _ => TerminalActivity::Unknown,
+            }
+        }
+        _ => TerminalActivity::Unknown,
     }
 }
 
@@ -384,7 +470,7 @@ mod tests {
         pump.push(&vec![b'x'; 4 * 1024 * 1024]);
         pump.flush_if_due();
         assert!(unacked.saturated());
-        let (events, received) = mpsc::channel();
+        let (events, received) = mpsc::sync_channel(4);
         spawn_reader(Box::new(std::io::Cursor::new(vec![1u8])), events, unacked);
         assert!(received.recv_timeout(Duration::from_millis(20)).is_err());
         drop(pump);
@@ -392,6 +478,159 @@ mod tests {
             received.recv_timeout(Duration::from_secs(1)).unwrap(),
             Event::Eof
         ));
+    }
+
+    #[test]
+    fn default_login_shell_has_a_real_program_name_for_idle_detection() {
+        let mut command = CommandBuilder::new_default_prog();
+        command.env("SHELL", "/bin/sh");
+        assert_eq!(program_name(&command), "sh");
+        assert_eq!(program_name(&CommandBuilder::new("/bin/zsh")), "zsh");
+        assert_eq!(program_name(&CommandBuilder::new("-zsh")), "zsh");
+    }
+
+    struct Fixture {
+        sessions: TerminalSessions,
+        id: String,
+        output: mpsc::Receiver<Vec<u8>>,
+    }
+    impl Fixture {
+        fn new() -> Self {
+            let sessions: TerminalSessions = Arc::new(Mutex::new(HashMap::new()));
+            let id = Uuid::new_v4().to_string();
+            let (send, output) = mpsc::channel();
+            let channel = Channel::new(move |body| {
+                if let InvokeResponseBody::Raw(bytes) = body {
+                    let _ = send.send(bytes);
+                }
+                Ok(())
+            });
+            let request = LocalTerminalRequest {
+                session_id: id.clone(),
+                cols: 80,
+                rows: 24,
+                cwd: None,
+                command: None,
+                env: vec![],
+                shell_integration: Some("none".into()),
+            };
+            let mut command = CommandBuilder::new("/bin/sh");
+            command.arg("-i");
+            command.env("PS1", "");
+            command.env("ENV", "/dev/null");
+            command.env("BASH_ENV", "/dev/null");
+            spawn(channel, sessions.clone(), request, command, LOCAL_SERVER_ID).unwrap();
+            let fixture = Self {
+                sessions,
+                id,
+                output,
+            };
+            fixture.input("stty -echo; printf 'fixture-ready\\n'\n");
+            fixture.until(b"fixture-ready\r\n");
+            fixture
+        }
+        fn input(&self, text: &str) {
+            terminal::input(&self.sessions, &self.id, text.into()).unwrap();
+        }
+        fn until(&self, marker: &[u8]) -> Vec<u8> {
+            let deadline = Instant::now() + Duration::from_secs(15);
+            let mut bytes = Vec::new();
+            loop {
+                let frame = self
+                    .output
+                    .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+                    .expect("Fixture output timed out");
+                if frame[0] == 0 {
+                    bytes.extend_from_slice(&frame[1..]);
+                    let _ = terminal::ack(&self.sessions, &self.id, frame.len() - 1);
+                    if bytes.windows(marker.len()).any(|w| w == marker) {
+                        return bytes;
+                    }
+                } else {
+                    panic!("Fixture closed early: {}", String::from_utf8_lossy(&bytes));
+                }
+            }
+        }
+        fn activity(&self) -> TerminalActivity {
+            terminal::activities(&self.sessions, std::slice::from_ref(&self.id)).unwrap()[&self.id]
+        }
+    }
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = terminal::input(&self.sessions, &self.id, "\x03exit\n".into());
+            let _ = terminal::close(&self.sessions, &self.id);
+        }
+    }
+
+    #[test]
+    fn activity_detects_foreground_and_background_jobs_without_terminal_input() {
+        let fixture = Fixture::new();
+        assert_eq!(fixture.activity(), TerminalActivity::Idle);
+        fixture.input("sleep 2 & printf 'background-ready\\n'\n");
+        fixture.until(b"background-ready\r\n");
+        assert_eq!(fixture.activity(), TerminalActivity::Busy);
+        fixture.input("wait; printf 'background-finished\\n'\n");
+        fixture.until(b"background-finished\r\n");
+        assert_eq!(fixture.activity(), TerminalActivity::Idle);
+        fixture.input("printf 'foreground-ready\\n'; sleep 2\n");
+        fixture.until(b"foreground-ready\r\n");
+        let deadline = Instant::now() + Duration::from_secs(1);
+        while fixture.activity() != TerminalActivity::Busy {
+            assert!(Instant::now() < deadline);
+            thread::sleep(Duration::from_millis(10));
+        }
+        fixture.input("\x03printf 'foreground-finished\\n'\n");
+        fixture.until(b"foreground-finished\r\n");
+        assert_eq!(fixture.activity(), TerminalActivity::Idle);
+    }
+
+    #[test]
+    fn exec_replacing_the_shell_is_still_an_active_job() {
+        let fixture = Fixture::new();
+        fixture.input("exec sleep 2\n");
+        let deadline = Instant::now() + Duration::from_secs(1);
+        while fixture.activity() != TerminalActivity::Busy {
+            assert!(Instant::now() < deadline);
+            thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    #[test]
+    fn large_output_unicode_alternate_screen_and_resize_survive_backpressure() {
+        let fixture = Fixture::new();
+        for n in 0..100 {
+            terminal::resize(
+                &fixture.sessions,
+                crate::models::TerminalResize {
+                    session_id: fixture.id.clone(),
+                    cols: 80 + n % 40,
+                    rows: 24 + n % 20,
+                },
+            )
+            .unwrap();
+        }
+        terminal::resize(
+            &fixture.sessions,
+            crate::models::TerminalResize {
+                session_id: fixture.id.clone(),
+                cols: 132,
+                rows: 43,
+            },
+        )
+        .unwrap();
+        let block = "x".repeat(512);
+        fixture.input(&format!("n=0; while [ $n -lt 12000 ]; do printf '%s' '{block}'; n=$((n+1)); done; printf '\\033[?1049h漢字🙂 é\\033[?1049l\\n'; stty size; printf 'stress-finished\\n'\n"));
+        // Let the producer reach backpressure before acknowledging frames.
+        thread::sleep(Duration::from_millis(100));
+        let bytes = fixture.until(b"stress-finished\r\n");
+        assert_eq!(
+            bytes.iter().filter(|byte| **byte == b'x').count(),
+            12000 * 512
+        );
+        let text =
+            String::from_utf8(bytes).expect("PTY data must retain UTF-8 bytes across frames");
+        assert!(text.contains("\x1b[?1049h漢字🙂 é\x1b[?1049l"));
+        assert!(text.contains("43 132"));
     }
 
     fn run_shell(script: &str) -> (String, String) {

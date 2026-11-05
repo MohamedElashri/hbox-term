@@ -8,9 +8,9 @@ The preceding QA/password fixes and native OpenSSH support are merged in #6 and 
    SFTP and tunnels, with private app-owned connection control and explicit ownership cleanup.
 2. **Lifecycle and recovery — merged in #10.** Accurate connection states, interruption handling,
    safe cancel/reconnect and sleep/network recovery without command replay.
-3. **Workspaces — in progress.** Named layouts, ordinary windows and local/remote workspace restore;
+3. **Workspaces — merged in #11.** Named layouts, ordinary windows and local/remote workspace restore;
    restoring a layout must not imply resuming a process or running remote commands.
-4. **Terminal quality — pending.** Keyboard/IME/Unicode/full-screen-app coverage, resize/output
+4. **Terminal quality — in progress.** Keyboard/IME/Unicode/full-screen-app coverage, resize/output
    stress and protection when closing active jobs.
 5. **Credentials — pending.** External credential references, provider flows and live verification,
    manual/idle/screen locking and clipboard/scrollback/log privacy controls.

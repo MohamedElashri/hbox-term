@@ -1,3 +1,4 @@
+import { confirmTerminalClose } from "../terminal-close";
 import { connectionDraft } from "../connection-draft";
 import { saveConnection } from "../connection-save";
 import { invoke } from "@tauri-apps/api/core";
@@ -299,6 +300,7 @@ export async function deleteActiveServer(): Promise<void> {
 export async function disconnectActiveServer(): Promise<void> {
   const serverId = state.activeServerId;
   if (!serverId) return;
+  if (!await confirmTerminalClose(state.terminalTabs.filter(tab => tab.serverId === serverId), "Disconnect server")) return;
   cancelCurrentOperation();
   clearRefreshTimer();
   await closeInteractiveSessions(serverId);
