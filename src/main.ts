@@ -1,3 +1,4 @@
+import { installWindowEvents } from "./app/window-events";
 import { confirmTerminalClose } from "./app/terminal-close";
 import { cancelCurrentOperation } from "./app/session";
 import { watchSharedSsh } from "./app/shared-ssh";
@@ -50,12 +51,14 @@ async function prepareQuit(token: string): Promise<void> {
 }
 
 async function installEventListeners(): Promise<void> {
-  state.terminalUnlisteners.push(await listen<string>("prepare-quit", event => { void prepareQuit(event.payload); }));
+  state.terminalUnlisteners.push(...await installWindowEvents(appWindow.label, {
+    quit: token => { void prepareQuit(token); },
+    about: () => { void runAction("show-about"); },
+    updates: () => { void runAction("check-updates"); },
+  }, listen));
   // Quit can be requested before this webview has installed its event listener.
   const pending = await invoke<string | null>("pending_quit");
   if (pending) void prepareQuit(pending);
-  state.terminalUnlisteners.push(await listen("show-about", () => { void runAction("show-about"); }));
-  state.terminalUnlisteners.push(await listen("check-updates", () => { void runAction("check-updates"); }));
   state.terminalUnlisteners.push(await listen<TerminalEvent>("log-stream-output", (event) => {
     if (state.logsViewer.streamId === event.payload.sessionId) appendLogOutput(state.logsViewer, event.payload.data, "workspace");
     else if (state.containerLogViewer?.streamId === event.payload.sessionId) appendLogOutput(state.containerLogViewer, event.payload.data, "container");

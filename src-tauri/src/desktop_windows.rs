@@ -289,7 +289,14 @@ fn emit_next_quit(app: &AppHandle, token: &str) -> Result<(), String> {
         });
     if let Some(label) = next {
         if let Some(window) = app.get_webview_window(&label) {
-            if let Err(error) = window.emit("prepare-quit", token) {
+            let _ = window.show();
+            let _ = window.unminimize();
+            let _ = window.set_focus();
+            if let Err(error) = window.emit_to(
+                window.label(),
+                "prepare-quit",
+                serde_json::json!({"token":token,"windowLabel":label}),
+            ) {
                 *app.state::<DesktopWindows>()
                     .quit
                     .lock()

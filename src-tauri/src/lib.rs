@@ -1873,7 +1873,7 @@ pub fn run() {
                     let _ = window.show();
                     let _ = window.unminimize();
                     let _ = window.set_focus();
-                    let _ = window.emit(event_name, ());
+                    let _ = window.emit_to(window.label(), event_name, ());
                 }
             });
             let data_dir = app.path().app_local_data_dir()?;

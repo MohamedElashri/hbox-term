@@ -210,18 +210,7 @@ pub(crate) fn spawn(
     command.env("COLORTERM", "truecolor");
     command.env("TERM_PROGRAM", "ternway");
     command.env("TERM_PROGRAM_VERSION", env!("CARGO_PKG_VERSION"));
-    let expected_program = command
-        .get_argv()
-        .first()
-        .map(|program| {
-            Path::new(program)
-                .file_name()
-                .unwrap_or(program)
-                .to_string_lossy()
-                .trim_start_matches('-')
-                .to_string()
-        })
-        .unwrap_or_default();
+    let expected_program = program_name(&command);
     let child = pty
         .slave
         .spawn_command(command)
@@ -378,6 +367,24 @@ fn run(
     }
 }
 
+fn program_name(command: &CommandBuilder) -> String {
+    let program = if command.is_default_prog() {
+        command.get_shell()
+    } else {
+        command
+            .get_argv()
+            .first()
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    };
+    Path::new(&program)
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .trim_start_matches('-')
+        .to_string()
+}
+
 fn job_activity(
     master: &dyn MasterPty,
     child: &mut (dyn Child + Send + Sync),
@@ -471,6 +478,15 @@ mod tests {
             received.recv_timeout(Duration::from_secs(1)).unwrap(),
             Event::Eof
         ));
+    }
+
+    #[test]
+    fn default_login_shell_has_a_real_program_name_for_idle_detection() {
+        let mut command = CommandBuilder::new_default_prog();
+        command.env("SHELL", "/bin/sh");
+        assert_eq!(program_name(&command), "sh");
+        assert_eq!(program_name(&CommandBuilder::new("/bin/zsh")), "zsh");
+        assert_eq!(program_name(&CommandBuilder::new("-zsh")), "zsh");
     }
 
     struct Fixture {
