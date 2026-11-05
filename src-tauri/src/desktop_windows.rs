@@ -170,11 +170,21 @@ fn observe(app: &AppHandle, window: &WebviewWindow) {
         }
     });
 }
+fn window_creation(
+    quit: &Mutex<Option<ShutdownRequest>>,
+) -> Result<std::sync::MutexGuard<'_, Option<ShutdownRequest>>, String> {
+    let preparing = quit
+        .try_lock()
+        .map_err(|_| "Ternway is preparing to close; try again after cancelling".to_string())?;
+    if preparing.is_some() {
+        return Err("Cancel closing or restarting before opening another window".into());
+    }
+    Ok(preparing)
+}
+
 fn create(app: &AppHandle, label: &str, layout: Option<&str>) -> Result<(), String> {
     let state = app.state::<DesktopWindows>();
-    if state.quit.lock().map_err(|e| e.to_string())?.is_some() {
-        return Err("Finish or cancel quitting before opening a window".into());
-    }
+    let _creation = window_creation(&state.quit)?;
     {
         let mut labels = state.labels.lock().map_err(|e| e.to_string())?;
         if labels.len() >= 128 {
@@ -215,13 +225,6 @@ fn create(app: &AppHandle, label: &str, layout: Option<&str>) -> Result<(), Stri
         .map_err(|e| e.to_string())
 }
 pub(crate) fn new_window(app: &AppHandle, layout: Option<&str>) -> Result<String, String> {
-    let state = app.state::<DesktopWindows>();
-    let preparing = state.quit.try_lock().map_err(|_| {
-        "Ternway is preparing to close; cancel before opening another window".to_string()
-    })?;
-    if preparing.is_some() {
-        return Err("Cancel closing or restarting before opening another window".into());
-    }
     let label = format!("workspace-{}", uuid::Uuid::new_v4());
     create(app, &label, layout)?;
     Ok(label)
@@ -572,6 +575,24 @@ mod tests {
             acknowledge(&mut request, "other", "new", true),
             Some(ShutdownIntent::Restart)
         );
+    }
+    #[test]
+    fn window_creation_is_exclusive_nonblocking_and_rejects_shutdown() {
+        let quit = Mutex::new(None);
+        let permit = window_creation(&quit).unwrap();
+        assert!(
+            window_creation(&quit).is_err(),
+            "Nested creation must reject without waiting on its own lock"
+        );
+        drop(permit);
+        *quit.lock().unwrap() = Some((
+            "restart".into(),
+            VecDeque::from(["main".into()]),
+            ShutdownIntent::Restart,
+        ));
+        assert!(window_creation(&quit).is_err());
+        *quit.lock().unwrap() = None;
+        assert!(window_creation(&quit).is_ok());
     }
     #[test]
     fn only_owned_window_labels_can_choose_session_paths() {
