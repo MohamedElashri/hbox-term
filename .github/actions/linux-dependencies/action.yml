@@ -14,7 +14,8 @@ runs:
         set -euo pipefail
         # Some hosted runners hit a persistently slow Azure mirror. Keep Ubuntu's
         # signed repositories and use its official archive over HTTPS instead.
-        for source in /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources; do
+        # Ubuntu 24.04 runners can use mirror+file rather than direct source URLs.
+        for source in /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources /etc/apt/apt-mirrors.txt; do
           if [[ -f "$source" ]]; then
             sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g; s|https://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g; s|http://security.ubuntu.com/ubuntu|https://security.ubuntu.com/ubuntu|g' "$source"
           fi
