@@ -48,6 +48,7 @@ pub(crate) fn validate_reference(reference: &OpenSshConfig) -> Result<OpenSshCon
         }
     };
     Ok(OpenSshConfig {
+        share_connection: reference.share_connection,
         alias: alias.to_owned(),
         config_path,
     })
@@ -66,8 +67,9 @@ pub(crate) fn command(
     if let Some(path) = reference.config_path {
         command.args(["-F", &path]);
     }
-    // Never invoke a local shell or flatten arguments. No -t/-T, -l, -p or -o overrides:
-    // RequestTTY, RemoteCommand, authentication, hooks and forwarding belong to OpenSSH.
+    // Never invoke a local shell or flatten arguments. RequestTTY, RemoteCommand,
+    // authentication, hooks and forwarding belong to OpenSSH. Sharing overrides
+    // are applied explicitly by start(), only for app-owned multiplexing.
     command.arg("--");
     command.arg(reference.alias);
     if let Some(remote) = remote_command {
@@ -90,7 +92,19 @@ pub(crate) fn start(
         .open_ssh
         .as_ref()
         .ok_or("This OpenSSH connection has no config reference; edit it to choose an alias")?;
-    let command = command(reference, request.command.as_deref())?;
+    let socket = crate::openssh_pool::prepare(profile, &request.session_id, &sessions)?;
+    let mut command = command(reference, request.command.as_deref())?;
+    if let Some(socket) = socket {
+        let at = command.get_argv().iter().position(|v| v == "--").unwrap();
+        let args = [
+            "-oControlMaster=auto".into(),
+            "-oControlPersist=300".into(),
+            "-oForkAfterAuthentication=no".into(),
+            "-S".into(),
+            socket.into_os_string(),
+        ];
+        command.get_argv_mut().splice(at..at, args);
+    }
     // Shell integration and remote cwd injection would override RemoteCommand or mutate the
     // server before authentication. Native sessions use the original configuration unchanged.
     let local = LocalTerminalRequest {
@@ -134,6 +148,7 @@ mod tests {
         let store = Store::open(&dir.join("db"), &dir.join("vault")).unwrap();
         let profile = store
             .save_server(&draft(&OpenSshConfig {
+                share_connection: true,
                 alias: "qa".into(),
                 config_path: Some(config.to_string_lossy().into()),
             }))
@@ -165,6 +180,7 @@ mod tests {
         )
         .unwrap();
         let reference = OpenSshConfig {
+            share_connection: true,
             alias: "qa;echo${IFS}literal".into(),
             config_path: Some(path.to_string_lossy().into()),
         };
@@ -186,6 +202,7 @@ mod tests {
         );
         let default: Vec<_> = super::command(
             &OpenSshConfig {
+                share_connection: true,
                 alias: "qa".into(),
                 config_path: None,
             },
@@ -199,6 +216,7 @@ mod tests {
         assert_eq!(default, ["/usr/bin/ssh", "--", "qa"]);
         let ignored: Vec<_> = super::command(
             &OpenSshConfig {
+                share_connection: true,
                 alias: "qa".into(),
                 config_path: Some("none".into()),
             },
@@ -223,17 +241,20 @@ mod tests {
             "qa\0other",
         ] {
             assert!(validate_reference(&OpenSshConfig {
+                share_connection: true,
                 alias: alias.into(),
                 config_path: None
             })
             .is_err());
         }
         assert!(validate_reference(&OpenSshConfig {
+            share_connection: true,
             alias: "qa".into(),
             config_path: Some("relative/config".into())
         })
         .is_err());
         assert!(validate_reference(&OpenSshConfig {
+            share_connection: true,
             alias: "qa".into(),
             config_path: Some("/nonexistent/ternway-config".into())
         })
@@ -257,6 +278,7 @@ mod tests {
         )
         .unwrap();
         let reference = OpenSshConfig {
+            share_connection: true,
             alias: "qa".into(),
             config_path: Some(config.to_string_lossy().into()),
         };
@@ -276,7 +298,7 @@ mod tests {
         let rejected = crate::ssh::SshClient::connect_with_cancellation(&saved, None, &store)
             .err()
             .unwrap();
-        assert!(rejected.contains("open in the terminal"));
+        assert!(rejected.contains("Connect and authenticate in its terminal first"));
         let mut managed: ServerDraft = serde_json::from_value(serde_json::json!({"name":"Managed", "host":"127.0.0.1", "username":"qa", "port":22, "jumpHostId":saved.id})).unwrap();
         assert!(store
             .save_server(&managed)
@@ -316,6 +338,7 @@ mod loopback_openssh {
     impl Drop for Sessions {
         fn drop(&mut self) {
             crate::terminal::close_server(&self.0, &self.1);
+            crate::openssh_pool::disconnect(&self.1);
         }
     }
 
@@ -406,6 +429,115 @@ mod loopback_openssh {
             assert!(sent_password);
         }
         text
+    }
+
+    #[test]
+    #[ignore = "Run make test-openssh with the loopback fixture dependencies"]
+    fn shared_terminal_files_commands_and_tunnels_use_one_authenticated_transport() {
+        use std::io::{Read, Write};
+        let fixture = SshFixture::start("publickey");
+        let key = fixture.directory.join("client");
+        assert!(std::process::Command::new("ssh-keygen")
+            .args(["-q", "-t", "ed25519", "-N", "", "-f"])
+            .arg(&key)
+            .status()
+            .unwrap()
+            .success());
+        let config = fixture.directory.join("config");
+        fs::write(&config, format!("Host shared\n HostName 127.0.0.1\n Port {}\n User qa\n IdentityAgent none\n IdentitiesOnly yes\n IdentityFile {}\n StrictHostKeyChecking yes\n UserKnownHostsFile {}\n RequestTTY force\n RemoteCommand fixture-wait\n",fixture.port,key.display(),fixture.directory.join("known_hosts").display())).unwrap();
+        let store = Store::open(
+            &fixture.directory.join("db"),
+            &fixture.directory.join("vault"),
+        )
+        .unwrap();
+        let profile = store.save_server(&serde_json::from_value(serde_json::json!({"name":"shared", "host":"shared", "username":"", "port":22, "authMethod":"openSsh", "openSsh":{"alias":"shared","configPath":config}})).unwrap()).unwrap();
+        let sessions: TerminalSessions = Arc::new(Mutex::new(HashMap::new()));
+        let _guard = Sessions(sessions.clone(), profile.id.clone());
+        assert!(!crate::openssh_pool::ready(&profile));
+        assert!(crate::openssh_pool::slave(&profile, false, "no-login").is_err());
+        let output = Channel::new(|_| Ok(()));
+        let request: TerminalRequest = serde_json::from_value(serde_json::json!({"sessionId":uuid::Uuid::new_v4().to_string(),"serverId":profile.id,"cols":80,"rows":24})).unwrap();
+        start(output, sessions.clone(), &profile, request).unwrap();
+        let until = Instant::now() + Duration::from_secs(15);
+        while !crate::openssh_pool::ready(&profile) {
+            assert!(Instant::now() < until, "Authentication timed out");
+            std::thread::sleep(Duration::from_millis(30));
+        }
+        let mut client =
+            crate::ssh::SshClient::connect_with_cancellation(&profile, None, &store).unwrap();
+        assert!(client
+            .exec("shared-command")
+            .unwrap()
+            .stdout
+            .contains("fixture-command:shared-command"));
+        let fsys = client.sftp().unwrap();
+        fsys.mkdir(std::path::Path::new("/folder"), 0o700).unwrap();
+        let name = std::path::Path::new("/folder/a space\nand unicode-λ.bin");
+        let bytes: Vec<u8> = (0..200_000).map(|n| (n % 251) as u8).collect();
+        {
+            let mut file = fsys.create(name).unwrap();
+            file.write_all(&bytes).unwrap();
+        }
+        let mut actual = Vec::new();
+        fsys.open(name).unwrap().read_to_end(&mut actual).unwrap();
+        assert_eq!(actual, bytes);
+        assert_eq!(fsys.stat(name).unwrap().size, Some(bytes.len() as u64));
+        assert_eq!(
+            fsys.readdir(std::path::Path::new("/folder")).unwrap()[0].0,
+            name
+        );
+        let renamed = std::path::Path::new("/folder/renamed");
+        fsys.rename(
+            name,
+            renamed,
+            Some(ssh2::RenameFlags::ATOMIC | ssh2::RenameFlags::OVERWRITE),
+        )
+        .unwrap();
+        assert!(fsys.stat(name).is_err());
+        fsys.unlink(renamed).unwrap();
+        fsys.rmdir(std::path::Path::new("/folder")).unwrap();
+        let target = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let target_port = target.local_addr().unwrap().port();
+        let echo = std::thread::spawn(move || {
+            let (mut socket, _) = target.accept().unwrap();
+            let mut b = [0; 4];
+            socket.read_exact(&mut b).unwrap();
+            socket.write_all(&b).unwrap();
+        });
+        let reserved = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = reserved.local_addr().unwrap().port();
+        drop(reserved);
+        let spec = format!("127.0.0.1:{port}:127.0.0.1:{target_port}");
+        crate::openssh_pool::forward(&profile, "local", &spec, false).unwrap();
+        let mut connection = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+        connection
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        connection.write_all(b"ping").unwrap();
+        let mut reply = [0; 4];
+        connection.read_exact(&mut reply).unwrap();
+        assert_eq!(&reply, b"ping");
+        echo.join().unwrap();
+        crate::openssh_pool::forward(&profile, "local", &spec, true).unwrap();
+        assert!(std::net::TcpStream::connect(("127.0.0.1", port)).is_err());
+        assert_eq!(
+            fs::read_to_string(fixture.directory.join("connections.log"))
+                .unwrap()
+                .lines()
+                .count(),
+            1,
+            "Slave tools must not open another TCP connection"
+        );
+        crate::openssh_pool::disconnect(&profile.id);
+        assert!(!crate::openssh_pool::ready(&profile));
+        assert!(client.exec("must-not-reconnect").is_err());
+        assert_eq!(
+            fs::read_to_string(fixture.directory.join("connections.log"))
+                .unwrap()
+                .lines()
+                .count(),
+            1
+        );
     }
 
     #[test]

@@ -1,3 +1,4 @@
+import { watchSharedSsh } from "./app/shared-ssh";
 import { rememberGroup } from "./app/connection-groups";
 import { closeCustomSelects } from "./app/select-controls";
 import { containModalFocus, handleModalKeydown } from "./app/modal-state";
@@ -183,6 +184,7 @@ async function bootstrap(): Promise<void> {
   render();
   try {
     await installEventListeners();
+    watchSharedSsh();
     await refreshSnapshot(false);
     state.credentialStatus = await invoke<CredentialStatus>("get_credential_status");
     state.loading = false;

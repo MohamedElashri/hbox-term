@@ -5,7 +5,6 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 use ssh2::{
     Channel, CheckResult, ErrorCode, KeyboardInteractivePrompt, KnownHostFileKind, Prompt, Session,
-    Sftp,
 };
 use std::collections::HashMap;
 use std::fs;
@@ -74,7 +73,8 @@ pub struct ExecOutput {
 }
 
 pub struct SshClient {
-    session: Session,
+    session: Option<Session>,
+    native: Option<ServerProfile>,
     cancellation: Option<Arc<AtomicBool>>,
     capabilities: Option<ServerCapabilities>,
     container_runtime: Option<String>,
@@ -97,7 +97,14 @@ impl SshClient {
         visited: &mut Vec<String>,
     ) -> Result<Self, String> {
         if profile.auth_method == AuthMethod::OpenSsh {
-            return Err("OpenSSH-linked connections open in the terminal. Managed file and server tools require a managed connection".into());
+            crate::openssh_pool::socket(profile)?;
+            return Ok(Self {
+                session: None,
+                native: Some(profile.clone()),
+                cancellation: cancellation.cloned(),
+                capabilities: None,
+                container_runtime: None,
+            });
         }
         if visited.iter().any(|id| id == &profile.id) {
             return Err("Bastion profiles contain a connection cycle".to_string());
@@ -113,7 +120,8 @@ impl SshClient {
         ensure_not_cancelled(cancellation)?;
         visited.pop();
         Ok(Self {
-            session,
+            session: Some(session),
+            native: None,
             cancellation: None,
             capabilities: None,
             container_runtime: None,
@@ -149,10 +157,16 @@ impl SshClient {
     }
 
     fn connection_is_usable(&mut self) -> bool {
-        if !self.session.authenticated() {
+        if let Some(profile) = &self.native {
+            return crate::openssh_pool::ready(profile);
+        }
+        let Some(session) = self.session.as_ref() else {
+            return false;
+        };
+        if !session.authenticated() {
             return false;
         }
-        match self.session.keepalive_send() {
+        match session.keepalive_send() {
             Ok(_) => true,
             Err(error) if error.code() == ErrorCode::Session(-37) => true,
             Err(_) => false,
@@ -247,12 +261,24 @@ impl SshClient {
         idle_timeout: Duration,
     ) -> Result<ExecOutput, String> {
         self.check_cancelled()?;
+        if let Some(profile) = &self.native {
+            return crate::openssh_pool::exec(
+                profile,
+                command,
+                input,
+                output_limit.unwrap_or(DEFAULT_OUTPUT_LIMIT),
+                idle_timeout,
+                self.cancellation.as_ref(),
+            );
+        }
         // The output bound is mandatory: callers that do not pass an explicit
         // limit still get the default cap so a misbehaving host cannot grow
         // these buffers without end.
         let output_limit = Some(output_limit.unwrap_or(DEFAULT_OUTPUT_LIMIT));
         let mut channel = self
             .session
+            .as_ref()
+            .ok_or("No managed SSH session")?
             .channel_session()
             .map_err(|error| format!("Could not open SSH command channel: {error}"))?;
         channel
@@ -342,19 +368,31 @@ impl SshClient {
 
     pub fn open_channel(&mut self) -> Result<Channel, String> {
         self.session
+            .as_ref()
+            .ok_or("Streaming channels are managed by OpenSSH for this connection")?
             .channel_session()
             .map_err(|error| format!("Could not open SSH terminal channel: {error}"))
     }
 
     pub fn direct_tcpip(&mut self, host: &str, port: u16) -> Result<Channel, String> {
         self.session
+            .as_ref()
+            .ok_or("Forwarding channels are managed by OpenSSH for this connection")?
             .channel_direct_tcpip(host, port, None)
             .map_err(|error| format!("Could not open forwarded SSH channel: {error}"))
     }
 
-    pub fn sftp(&self) -> Result<Sftp, String> {
+    pub(crate) fn sftp(&self) -> Result<crate::remote_fs::RemoteFs, String> {
+        if let Some(profile) = &self.native {
+            return crate::sftp_wire::Client::open_session(profile, self.cancellation.clone())
+                .map(crate::remote_fs::RemoteFs::Native)
+                .map_err(|e| e.to_string());
+        }
         self.session
+            .as_ref()
+            .ok_or("No managed SSH session")?
             .sftp()
+            .map(crate::remote_fs::RemoteFs::Managed)
             .map_err(|error| format!("Could not open SFTP subsystem: {error}"))
     }
 
@@ -364,25 +402,38 @@ impl SshClient {
             .map_err(|error| format!("Could not allocate a remote terminal: {error}"))
     }
 
-    pub fn session_mut(&mut self) -> &mut Session {
-        &mut self.session
+    pub fn session_mut(&mut self) -> Result<&mut Session, String> {
+        self.session
+            .as_mut()
+            .ok_or_else(|| "This operation requires a managed SSH session".into())
     }
 
     pub fn set_nonblocking(&mut self) -> Result<(), String> {
         // Keep the TCP stream itself blocking. Toggling a cloned stream can
         // leave libssh2's transport nonblocking after a command completes,
         // which prevents a later SFTP subsystem from initializing reliably.
-        self.session.set_blocking(false);
+        self.session
+            .as_ref()
+            .ok_or("No managed SSH session")?
+            .set_blocking(false);
         Ok(())
     }
 
     fn set_blocking(&mut self) -> Result<(), String> {
-        self.session.set_blocking(true);
+        self.session
+            .as_ref()
+            .ok_or("No managed SSH session")?
+            .set_blocking(true);
         Ok(())
     }
 
     pub fn disconnect(&self) -> Result<(), String> {
+        if self.native.is_some() {
+            return Ok(());
+        }
         self.session
+            .as_ref()
+            .ok_or("No managed SSH session")?
             .disconnect(None, "Disconnected by ternway", None)
             .map_err(|error| format!("Could not disconnect SSH session: {error}"))
     }
@@ -494,7 +545,9 @@ fn relay_jump(
         ensure_not_cancelled(cancellation)?;
         let mut progressed = false;
         if Instant::now() >= next_keepalive {
-            let _ = client.session_mut().keepalive_send();
+            if let Ok(session) = client.session_mut() {
+                let _ = session.keepalive_send();
+            }
             next_keepalive =
                 Instant::now() + Duration::from_secs(KEEPALIVE_INTERVAL_SECONDS.into());
         }
@@ -1215,6 +1268,7 @@ pub fn cancel_operation(operation_id: &str) -> Result<(), String> {
 }
 
 pub fn disconnect_server(server_id: &str) -> Result<(), String> {
+    crate::openssh_pool::disconnect(server_id);
     let cached = connections()
         .lock()
         .map_err(|_| "SSH connection lock was poisoned".to_string())?
@@ -1228,6 +1282,7 @@ pub fn disconnect_server(server_id: &str) -> Result<(), String> {
 }
 
 pub fn disconnect_all() {
+    crate::openssh_pool::stop_all();
     let cached = connections().lock().map(|mut clients| {
         clients
             .drain()

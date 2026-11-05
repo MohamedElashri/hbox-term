@@ -95,7 +95,7 @@ pub fn start(
         .handle_extended_data(ExtendedData::Merge)
         .map_err(|error| format!("Could not prepare live log output: {error}"))?;
     client
-        .session_mut()
+        .session_mut()?
         .set_keepalive(true, KEEPALIVE_INTERVAL_SECONDS);
     client.set_nonblocking()?;
 
@@ -143,7 +143,10 @@ pub fn start(
                 break;
             }
             if Instant::now() >= next_keepalive {
-                match client.session_mut().keepalive_send() {
+                match match client.session_mut() {
+                    Ok(session) => session.keepalive_send(),
+                    Err(_) => break,
+                } {
                     Ok(seconds) => {
                         keepalive_failures = 0;
                         next_keepalive =

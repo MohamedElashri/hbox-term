@@ -2,7 +2,7 @@ import type { ServerCapabilities } from "../types";
 
 /** Capability checks use the remote host, never the desktop operating system. */
 export function unavailableToolReason(view: string, capabilities: ServerCapabilities | null | undefined, authMethod?: string): string | undefined {
-  if (authMethod === "openSsh" && view !== "terminal") return "OpenSSH config connections use the terminal; graphical tools need a managed connection";
+  if (authMethod === "openSsh" && !["terminal", "files", "tunnels"].includes(view)) return "OpenSSH config connections use the terminal; graphical tools need a managed connection";
   if (!capabilities) return undefined;
   if (view === "docker" && !capabilities.docker && !capabilities.podman) return "Requires Docker or Podman";
   if (view === "services" && !capabilities.systemd) return "Requires systemd";

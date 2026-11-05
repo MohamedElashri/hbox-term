@@ -18,7 +18,7 @@ export function connectionDraft(data: Pick<FormData, "get">, id?: string): Recor
     identityId: authMethod === "sshAgent" ? identityId : undefined,
     id, name: text("name").trim() || host, host, username, port, authMethod,
     keyPath: authMethod === "privateKey" ? keyPath : undefined,
-    openSsh: linked ? { alias: host, configPath: text("openSshConfigPath").trim() || undefined } : undefined,
+    openSsh: linked ? { alias: host, configPath: text("openSshConfigPath").trim() || undefined, shareConnection: text("openSshSharing") !== "config" } : undefined,
     jumpHostId: linked ? undefined : text("jumpHostId").trim() || undefined,
     groupName: text("groupName").normalize("NFKC").replace(/[\u200B-\u200D\uFEFF]/gu, "").trim().replace(/\s+/gu, " ") || undefined,
     tags: [...new Set(text("tags").split(",").map(tag => tag.trim()).filter(Boolean))],

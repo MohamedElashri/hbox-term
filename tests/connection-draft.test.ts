@@ -64,7 +64,7 @@ test("switching away from agent removes identity reference", () => {
 test("OpenSSH references keep config and alias while omitting managed credentials and routing", () => {
   const draft = connectionDraft(form({ authMethod: "openSsh", openSshAlias: " work ", openSshConfigPath: "/home/alice/SSH config", host: "wrong-preview", username: "wrong-user", port: "invalid", identityId: "old", password: "old-secret", keyPassphrase: "old-secret", sudoPassword: "old-secret", jumpHostId: "old-bastion" }));
   assert.equal(draft.host, "work");
-  assert.deepEqual(draft.openSsh, { alias: "work", configPath: "/home/alice/SSH config" });
+  assert.deepEqual(draft.openSsh, { alias: "work", configPath: "/home/alice/SSH config", shareConnection: true });
   assert.equal(draft.username, "");
   for (const key of ["password", "keyPassphrase", "sudoPassword"]) assert.equal(Object.hasOwn(draft, key), false);
   for (const key of ["keyPath", "identityId", "jumpHostId"]) assert.equal(draft[key], undefined);
@@ -75,4 +75,8 @@ test("OpenSSH aliases cannot smuggle options or additional arguments", () => {
   for (const alias of ["", "-oProxyCommand=bad", "host extra", "host\nother", "host\0other"]) {
     assert.throws(() => connectionDraft(form({ authMethod: "openSsh", openSshAlias: alias })), /OpenSSH host alias/);
   }
+});
+
+test("OpenSSH sharing can defer to configured multiplexing", () => {
+  assert.equal(connectionDraft(form({ authMethod: "openSsh", openSshAlias: "work", openSshSharing: "config" })).openSsh?.shareConnection, false);
 });
