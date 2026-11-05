@@ -56,6 +56,21 @@ pub fn start(
     let pending_input_bytes = Arc::new(AtomicUsize::new(0));
     let unacked = Unacked::default();
     let profile = store.get_server(&request.server_id)?;
+    if profile.auth_method == crate::models::AuthMethod::OpenSsh {
+        // OpenSSH performs authentication inside the PTY, including MFA and host-key review.
+        let operation = begin_operation(operation_id);
+        let cancellation = operation.as_ref().map(|operation| operation.cancellation());
+        let result = crate::ssh::ensure_not_cancelled(cancellation.as_ref()).and_then(|()| {
+            let started = crate::openssh::start(output, sessions.clone(), &profile, request)?;
+            if let Err(error) = crate::ssh::ensure_not_cancelled(cancellation.as_ref()) {
+                let _ = close(&sessions, &started.session_id);
+                return Err(error);
+            }
+            Ok(started)
+        });
+        finish_operation(operation);
+        return result;
+    }
     let operation = begin_operation(operation_id);
     let cancellation = operation.as_ref().map(|operation| operation.cancellation());
     let mut client =

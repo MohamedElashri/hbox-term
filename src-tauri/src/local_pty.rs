@@ -185,14 +185,15 @@ pub fn start(
     for (key, value) in &request.env {
         command.env(key, value);
     }
-    spawn(output, sessions, request, command)
+    spawn(output, sessions, request, command, LOCAL_SERVER_ID)
 }
 
-fn spawn(
+pub(crate) fn spawn(
     output: OutputChannel,
     sessions: TerminalSessions,
     request: LocalTerminalRequest,
     mut command: CommandBuilder,
+    server_id: &str,
 ) -> Result<TerminalStarted, String> {
     let session_id = Uuid::parse_str(&request.session_id)
         .map_err(|_| "Invalid terminal session identifier".to_string())?
@@ -230,7 +231,7 @@ fn spawn(
     terminal::register(
         &sessions,
         &session_id,
-        LOCAL_SERVER_ID,
+        server_id,
         commands,
         pending_input_bytes.clone(),
         unacked.clone(),
@@ -260,7 +261,7 @@ fn spawn(
     });
     Ok(TerminalStarted {
         session_id,
-        server_id: LOCAL_SERVER_ID.to_string(),
+        server_id: server_id.to_string(),
     })
 }
 
@@ -394,7 +395,7 @@ mod tests {
         };
         let mut command = CommandBuilder::new("/bin/sh");
         command.env("PS1", "$ ");
-        spawn(output, sessions.clone(), request, command).expect("shell starts");
+        spawn(output, sessions.clone(), request, command, LOCAL_SERVER_ID).expect("shell starts");
         terminal::input(&sessions, &session_id, script.to_string()).expect("input accepted");
 
         let mut text = Vec::new();
@@ -454,7 +455,7 @@ mod tests {
             "zsh",
             &home.join("shell-integration"),
         );
-        spawn(output, sessions.clone(), request, command).expect("zsh starts");
+        spawn(output, sessions.clone(), request, command, LOCAL_SERVER_ID).expect("zsh starts");
         terminal::input(&sessions, &session_id, "true\nfalse\nexit\n".into()).unwrap();
         let mut text = Vec::new();
         let deadline = Instant::now() + Duration::from_secs(10);
@@ -495,7 +496,11 @@ mod tests {
     fn assert_bash_integration(program: &str) {
         let home = std::env::temp_dir().join(format!("ternway-bash-{}", Uuid::new_v4()));
         std::fs::create_dir_all(&home).unwrap();
-        std::fs::write(home.join(".bash_profile"), "PROMPT_COMMAND=': user-prompt'\n").unwrap();
+        std::fs::write(
+            home.join(".bash_profile"),
+            "PROMPT_COMMAND=': user-prompt'\n",
+        )
+        .unwrap();
         write_shell_integration(&home).unwrap();
         let root = home.join("shell-integration");
         let (frames, received) = mpsc::channel();
@@ -523,7 +528,7 @@ mod tests {
             "-i",
         ]);
         command.env("HOME", &home);
-        spawn(output, sessions.clone(), request, command).expect("bash starts");
+        spawn(output, sessions.clone(), request, command, LOCAL_SERVER_ID).expect("bash starts");
         terminal::input(&sessions, &session_id, "true\nfalse\nexit\n".into()).unwrap();
         let mut text = Vec::new();
         let deadline = Instant::now() + Duration::from_secs(10);
@@ -538,7 +543,8 @@ mod tests {
         let text = String::from_utf8_lossy(&text);
         assert!(text.contains("\x1b]133;A\x07"), "no prompt mark: {text:?}");
         assert_eq!(
-            text.matches("\x1b]133;C\x07").count(), 3,
+            text.matches("\x1b]133;C\x07").count(),
+            3,
             "expected one command mark for each input line, excluding prompt hooks: {text:?}"
         );
         assert!(
@@ -555,7 +561,10 @@ mod tests {
     #[test]
     fn runs_input_and_reports_exit() {
         let (output, message) = run_shell("echo ternway-$((40 + 2))\nexit 3\n");
-        assert!(output.contains("ternway-42"), "unexpected output: {output:?}");
+        assert!(
+            output.contains("ternway-42"),
+            "unexpected output: {output:?}"
+        );
         assert_eq!(message, "Process exited with code 3");
     }
 

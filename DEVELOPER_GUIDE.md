@@ -118,3 +118,17 @@ The fixture uses no real accounts and does not read or modify user SSH configura
 trust. It tests authentication directly on an isolated SSH session; host-key storage and trust dialogs are
 outside this fixture. Runtime-dependent config and unsupported routing are shown as requiring
 manual configuration in the importer. This is not a complete replacement for OpenSSH config.
+
+### Native OpenSSH compatibility
+
+See [OpenSSH connections](docs/OPENSSH.md) for supported workflows and current limits.
+With the same fixture virtualenv as the password tests, run:
+
+```sh
+TERNWAY_SSH_TEST_PYTHON=/tmp/ternway-ssh-tests/bin/python make test-openssh
+```
+
+This launches the real OpenSSH client through the application's PTY backend, with generated
+keys and isolated host trust. It never reads user SSH config or uses a real account. Both
+macOS and Linux CI run it after the managed password authentication fixture. Checks run on
+pull requests and main-branch pushes, avoiding duplicate builds for each PR commit.

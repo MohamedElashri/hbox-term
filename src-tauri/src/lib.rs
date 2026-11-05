@@ -9,6 +9,7 @@ mod identities;
 mod local_pty;
 mod log_stream;
 mod models;
+mod openssh;
 mod providers;
 mod pty_output;
 mod quick;
@@ -16,6 +17,8 @@ mod remote_edit;
 mod remote_integration;
 mod ssh;
 mod ssh_config;
+#[cfg(test)]
+mod ssh_test_fixture;
 mod storage;
 mod terminal;
 mod tier3;

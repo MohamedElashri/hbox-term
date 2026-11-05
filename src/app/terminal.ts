@@ -281,7 +281,7 @@ async function openTerminal(placement: Placement, command?: string, title?: stri
       const started = local
         ? await invoke<TerminalStarted>("start_local_terminal", { request: localRequest, onOutput: surface.output })
         : await invokeCommand<TerminalStarted>("start_terminal", { request: { sessionId: id, serverId, cols, rows, command: tabCommand, shellIntegration: config.remoteShellIntegration && !tabCommand, cwd: remoteWorkingDirectory(placement, serverId) }, onOutput: surface.output });
-      if (!local) connectedServerIds.add(serverId);
+      if (!local && server?.authMethod !== "openSsh") connectedServerIds.add(serverId);
       tab.sessionId = started.sessionId; tab.connecting = false;
       // The terminal may have been fitted to its real size while the session was opening.
       if (surface.cols !== cols || surface.rows !== rows) void invoke("terminal_resize", { request: { sessionId: tab.sessionId, cols: surface.cols, rows: surface.rows } }).catch(() => undefined);

@@ -22,3 +22,10 @@ test("unknown capabilities do not prematurely reject a tool", () => {
   assert.equal(unavailableToolReason("terminal", null), undefined);
   assert.equal(unavailableToolReason("services", undefined), undefined);
 });
+
+test("OpenSSH-linked terminals cannot enable graphical tools through capability snapshots", () => {
+  const capable = { ...host, systemd: true, cron: true, docker: true, packageManager: "apt-get", networkTool: "ss" };
+  for (const view of ["files", "dashboard", "services", "packages", "tunnels", "commands"]) assert.match(unavailableToolReason(view, capable, "openSsh")!, /managed connection/);
+  assert.equal(unavailableToolReason("terminal", capable, "openSsh"), undefined);
+  assert.equal(unavailableToolReason("files", capable, "password"), undefined);
+});
