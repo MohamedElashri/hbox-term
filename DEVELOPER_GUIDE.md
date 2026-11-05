@@ -97,3 +97,24 @@ terminal splits and renderer changes, and immediate quit/reopen with a renamed t
 Run `npm audit` when dependencies change. macOS and Linux CI run the frontend build and both
 test suites. Live password-manager authentication and remote administration need separate
 integration checks; passing fixture tests does not verify those external systems.
+
+### Password login and SSH config fixtures
+
+`make test` checks password prompt recovery/cancellation, session-only versus encrypted-vault
+storage, Git service classification, conditional Includes and static config parity with OpenSSH.
+Only generated, command-free fixtures are passed to `ssh -G`; importing user config never
+executes SSH, Match exec or ProxyCommand.
+
+The macOS/Linux CI also runs a disposable loopback SSH server to test password authentication,
+keyboard-interactive passwords, fallback, rejected credentials and a command after login:
+
+```sh
+python3 -m venv /tmp/ternway-ssh-tests
+/tmp/ternway-ssh-tests/bin/python -m pip install -r tests/fixtures/requirements.txt
+TERNWAY_SSH_TEST_PYTHON=/tmp/ternway-ssh-tests/bin/python make test-ssh-password
+```
+
+The fixture uses no real accounts and does not read or modify user SSH configuration or host
+trust. It tests authentication directly on an isolated SSH session; host-key storage and trust dialogs are
+outside this fixture. Runtime-dependent config and unsupported routing are shown as requiring
+manual configuration in the importer. This is not a complete replacement for OpenSSH config.

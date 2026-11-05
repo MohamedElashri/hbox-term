@@ -118,3 +118,19 @@ test("without a dialog normal terminal typing stays untouched", () => {
   assert.equal(document.activeElement, terminal);
   dom.window.close();
 });
+
+test("password entry survives a background redraw without crossing connection records", () => {
+  const { dom, root } = fixture();
+  root.innerHTML = '<form data-form="ssh-password" data-connection-id="qa"><input type="password" name="password"><input type="checkbox" name="remember"></form>';
+  const previous = root.querySelector<HTMLFormElement>("form")!;
+  previous.querySelector<HTMLInputElement>('[name="password"]')!.value = "fixture secret";
+  root.innerHTML = '<form data-form="ssh-password" data-connection-id="qa"><input type="password" name="password"></form>';
+  restoreConnectionForm(root, previous);
+  assert.equal(root.querySelector("form"), previous);
+  assert.equal(previous.querySelector<HTMLInputElement>('[name="password"]')!.value, "fixture secret");
+  root.innerHTML = '<form data-form="ssh-password" data-connection-id="another"><input type="password" name="password"></form>';
+  restoreConnectionForm(root, previous);
+  assert.notEqual(root.querySelector("form"), previous);
+  assert.equal(root.querySelector<HTMLInputElement>('[name="password"]')!.value, "");
+  dom.window.close();
+});

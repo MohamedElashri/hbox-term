@@ -33,6 +33,9 @@ export interface SshKey {
 
 export interface SshConfigEntry {
   alias: string;
+  authMethod?: "password" | "privateKey";
+  service?: string;
+  issues?: string[];
   host?: string;
   username?: string;
   port?: number;

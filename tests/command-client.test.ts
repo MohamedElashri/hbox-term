@@ -137,3 +137,40 @@ test("a canceled credential prompt cannot publish its later failure", async () =
   await assert.rejects(pending, OperationCancelledError);
   assert.equal(f.calls.filter(call => call.command === "connect_server").length, 1);
 });
+
+test("a password connection with no saved secret asks and retries the original operation", async () => {
+  let attempts = 0;
+  const f = fixture(async command => {
+    if (command === "connect_server" && ++attempts === 1) throw { kind: "sshPasswordRequired", serverId: "qa", message: "Enter the SSH password" };
+    return "connected";
+  });
+  let prompted = "";
+  f.options.requestSshPassword = async id => { prompted = id; };
+  assert.equal(await createCommandClient(f.options).invokeCommand("connect_server", { serverId: "qa" }), "connected");
+  assert.equal(prompted, "qa");
+  assert.equal(attempts, 2);
+});
+
+test("password recovery is bounded when the replacement password is rejected", async () => {
+  const error = { kind: "sshPasswordRequired", serverId: "qa", message: "Password rejected" };
+  const f = fixture(async () => { throw error; });
+  let prompts = 0;
+  f.options.requestSshPassword = async () => { prompts++; };
+  await assert.rejects(createCommandClient(f.options).invokeCommand("connect_server", { serverId: "qa" }), value => value === error);
+  assert.equal(prompts, 1);
+  assert.equal(f.calls.filter(call => call.command === "connect_server").length, 2);
+});
+
+test("canceling password entry cannot retry a stale connection", async () => {
+  const prompted = deferred<void>();
+  const decision = deferred<void>();
+  const f = fixture(async command => { if (command === "connect_server") throw { kind: "sshPasswordRequired", serverId: "qa", message: "Password" }; });
+  f.options.requestSshPassword = async () => { prompted.resolve(); await decision.promise; };
+  const client = createCommandClient(f.options);
+  const pending = client.invokeCommand("connect_server", { serverId: "qa" });
+  await prompted.promise;
+  client.cancelCurrentOperation();
+  decision.resolve();
+  await assert.rejects(pending, OperationCancelledError);
+  assert.equal(f.calls.filter(call => call.command === "connect_server").length, 1);
+});

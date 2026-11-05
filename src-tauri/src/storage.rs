@@ -2,14 +2,17 @@ use crate::credentials::CredentialStore;
 use crate::models::{AuthMethod, ServerDraft, ServerProfile};
 use chrono::Utc;
 use rusqlite::{params, Connection, OptionalExtension};
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
+use zeroize::Zeroizing;
 
 #[derive(Clone)]
 pub struct Store {
     connection: Arc<Mutex<Connection>>,
     credentials: CredentialStore,
+    session_passwords: Arc<Mutex<HashMap<String, Zeroizing<String>>>>,
 }
 
 impl Store {
@@ -116,6 +119,7 @@ impl Store {
         Ok(Self {
             connection: Arc::new(Mutex::new(connection)),
             credentials: CredentialStore::open(credentials_path)?,
+            session_passwords: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
@@ -167,14 +171,64 @@ impl Store {
         current: &str,
         new: &str,
     ) -> Result<crate::models::CredentialStatus, String> {
-        self.credentials.change_master_password(current, new)
+        let status = self.credentials.change_master_password(current, new)?;
+        self.session_passwords
+            .lock()
+            .map_err(|e| e.to_string())?
+            .clear();
+        Ok(status)
     }
 
     pub fn reset_credentials(&self, password: &str) -> Result<(), String> {
-        self.credentials.reset(password)
+        self.credentials.reset(password)?;
+        self.session_passwords
+            .lock()
+            .map_err(|e| e.to_string())?
+            .clear();
+        Ok(())
+    }
+
+    pub(crate) fn set_ssh_password(
+        &self,
+        server_id: &str,
+        password: &str,
+        remember: bool,
+    ) -> Result<(), String> {
+        let profile = self.get_server(server_id)?;
+        if !matches!(profile.auth_method, AuthMethod::Password) {
+            return Err("This connection does not use password authentication".into());
+        }
+        if password.is_empty() {
+            return Err("Enter the SSH password".into());
+        }
+        if remember {
+            self.credentials
+                .update_server(server_id, false, Some(password), None, None)?;
+        }
+        self.session_passwords
+            .lock()
+            .map_err(|e| e.to_string())?
+            .insert(server_id.to_owned(), Zeroizing::new(password.to_owned()));
+        Ok(())
+    }
+
+    pub(crate) fn forget_session_password(&self, server_id: &str) {
+        if let Ok(mut passwords) = self.session_passwords.lock() {
+            passwords.remove(server_id);
+        }
     }
 
     pub(crate) fn get_secret(&self, server_id: &str, slot: &str) -> Result<Option<String>, String> {
+        if slot == "password" {
+            if let Some(password) = self
+                .session_passwords
+                .lock()
+                .map_err(|e| e.to_string())?
+                .get(server_id)
+            {
+                return Ok(Some(password.to_string()));
+            }
+        }
         self.credentials.get(server_id, slot)
     }
 
@@ -367,7 +421,15 @@ impl Store {
                 draft.sudo_password.as_deref(),
             )?;
         }
-        self.get_server(&id)
+        let saved = self.get_server(&id)?;
+        if updates_credentials
+            || existing
+                .as_ref()
+                .is_some_and(|old| crate::ssh::profile_key(old) != crate::ssh::profile_key(&saved))
+        {
+            self.forget_session_password(&id);
+        }
+        Ok(saved)
     }
 
     fn validate_jump_host(
@@ -416,6 +478,7 @@ impl Store {
 
     pub fn delete_server(&self, id: &str) -> Result<(), String> {
         self.credentials.remove_server(id)?;
+        self.forget_session_password(id);
         let connection = self
             .connection
             .lock()
@@ -442,7 +505,7 @@ impl Store {
             tags: source.tags,
             notes: source.notes,
             favorite: false,
-            password: self.get_secret(id, "password")?,
+            password: self.credentials.get(id, "password")?,
             key_passphrase: self.get_secret(id, "key-passphrase")?,
             sudo_password: self.get_secret(id, "sudo-password")?,
         };
@@ -786,5 +849,71 @@ mod identity_migration_tests {
         }
         assert!(database.with_extension("pre-identities.sqlite").exists());
         std::fs::remove_dir_all(directory).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod password_storage_tests {
+    use super::*;
+
+    #[test]
+    fn transient_passwords_are_shared_in_memory_and_never_persisted_or_duplicated() {
+        let dir = std::env::temp_dir().join(format!("ternway-password-store-{}", Uuid::new_v4()));
+        let store = Store::open(&dir.join("db"), &dir.join("vault")).unwrap();
+        let draft: ServerDraft = serde_json::from_value(serde_json::json!({"name":"qa", "host":"127.0.0.1", "username":"qa", "port":22, "authMethod":"password"})).unwrap();
+        let profile = store.save_server(&draft).unwrap();
+        store
+            .set_ssh_password(&profile.id, " secret with spaces ", false)
+            .unwrap();
+        assert_eq!(
+            store
+                .clone()
+                .get_secret(&profile.id, "password")
+                .unwrap()
+                .as_deref(),
+            Some(" secret with spaces ")
+        );
+        let copy = store.duplicate_server(&profile.id).unwrap();
+        assert_eq!(store.get_secret(&copy.id, "password").unwrap(), None);
+        assert!(!dir.join("vault").exists());
+        let reopened = Store::open(&dir.join("db"), &dir.join("vault")).unwrap();
+        assert_eq!(reopened.get_secret(&profile.id, "password").unwrap(), None);
+        store.forget_session_password(&profile.id);
+        assert_eq!(store.get_secret(&profile.id, "password").unwrap(), None);
+        drop(store);
+        drop(reopened);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn remembering_requires_vault_unlock_and_survives_reopening() {
+        let dir = std::env::temp_dir().join(format!("ternway-remember-{}", Uuid::new_v4()));
+        let store = Store::open(&dir.join("db"), &dir.join("vault")).unwrap();
+        let draft: ServerDraft = serde_json::from_value(serde_json::json!({"name":"qa", "host":"127.0.0.1", "username":"qa", "port":22, "authMethod":"password"})).unwrap();
+        let profile = store.save_server(&draft).unwrap();
+        assert!(store
+            .set_ssh_password(&profile.id, "ssh fixture password", true)
+            .unwrap_err()
+            .starts_with("MASTER_PASSWORD_SETUP_REQUIRED:"));
+        assert_eq!(store.get_secret(&profile.id, "password").unwrap(), None);
+        store.unlock_credentials("fixture vault password").unwrap();
+        store
+            .set_ssh_password(&profile.id, "ssh fixture password", true)
+            .unwrap();
+        drop(store);
+        let reopened = Store::open(&dir.join("db"), &dir.join("vault")).unwrap();
+        assert!(reopened.get_secret(&profile.id, "password").is_err());
+        reopened
+            .unlock_credentials("fixture vault password")
+            .unwrap();
+        assert_eq!(
+            reopened
+                .get_secret(&profile.id, "password")
+                .unwrap()
+                .as_deref(),
+            Some("ssh fixture password")
+        );
+        drop(reopened);
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

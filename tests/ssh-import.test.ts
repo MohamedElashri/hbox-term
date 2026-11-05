@@ -19,3 +19,10 @@ test("agent import binds identity without importing a key", () => {
 test("missing username is caught before saving", () => {
   assert.throws(() => importedDraft({ alias: "lab" }, "", "Lab", ""), /username/);
 });
+
+test("unsupported routes cannot silently become direct connections", () => {
+  assert.throws(() => importedDraft({ alias: "internal", issues: ["proxyjump is not imported"] }, "ubuntu", "", ""), /manual configuration/);
+});
+test("explicit password preference wins over an available key", () => {
+  assert.equal(importedDraft({ alias: "lab", authMethod: "password", keyPath: "/key" }, "ubuntu", "", "").authMethod, "password");
+});

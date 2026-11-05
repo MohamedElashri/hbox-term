@@ -3,7 +3,7 @@ import { listeningEndpoint } from "../ports";
 import { errorText, OperationCancelledError } from "../command-client";
 import { confirm, finishAppDialog, finishTextInput, requestTextInput } from "../modals";
 import { render } from "../render";
-import { finishHostKeyPrompt, finishMasterPasswordPrompt, invokeCommand, setError } from "../session";
+import { finishHostKeyPrompt, finishMasterPasswordPrompt, finishSshPasswordPrompt, invokeCommand, setError } from "../session";
 import { activeServer, state } from "../state";
 import { showToast } from "../toasts";
 import { loadActiveView, loadAdministrationTab, setCommandResults } from "../workspace";
@@ -157,6 +157,10 @@ export async function deleteTunnel(id: string): Promise<void> {
 export function closeModal(): void {
   if (state.finishAppDialogWaiter) {
     finishAppDialog(false);
+    return;
+  }
+  if (state.modal === "ssh-password" && state.finishSshPasswordWaiter) {
+    finishSshPasswordPrompt(null);
     return;
   }
   if (state.modal === "master-password" && state.masterPasswordWaiter) {

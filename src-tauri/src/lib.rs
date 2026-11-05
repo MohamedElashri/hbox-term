@@ -50,6 +50,10 @@ pub(crate) enum AppError {
     Message {
         message: String,
     },
+    SshPasswordRequired {
+        server_id: String,
+        message: String,
+    },
     MasterPasswordRequired {
         message: String,
     },
@@ -106,6 +110,18 @@ struct UploadConflictPayload {
 
 impl From<String> for AppError {
     fn from(value: String) -> Self {
+        if let Some(payload) = value.strip_prefix("SSH_PASSWORD_REQUIRED:") {
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(payload) {
+                if let (Some(id), Some(message)) =
+                    (parsed["serverId"].as_str(), parsed["message"].as_str())
+                {
+                    return AppError::SshPasswordRequired {
+                        server_id: id.to_owned(),
+                        message: message.to_owned(),
+                    };
+                }
+            }
+        }
         if let Some(payload) = value.strip_prefix("HOST_KEY_MISMATCH:") {
             if let Ok(parsed) = serde_json::from_str::<HostKeyMismatchPayload>(payload) {
                 return AppError::HostKeyMismatch {
@@ -274,6 +290,22 @@ fn set_connection_group(
     group_name: String,
 ) -> Result<(), AppError> {
     state.store.set_connection_group(&server_ids, &group_name)?;
+    Ok(())
+}
+
+#[tauri::command(async)]
+fn set_ssh_password(
+    state: State<'_, AppState>,
+    server_id: String,
+    password: String,
+    remember: bool,
+) -> Result<(), AppError> {
+    let password = zeroize::Zeroizing::new(password);
+    state
+        .store
+        .set_ssh_password(&server_id, password.as_str(), remember)?;
+    let affected = affected_server_ids(&state.store, &server_id)?;
+    close_server_activity(&state, &affected)?;
     Ok(())
 }
 
@@ -1216,6 +1248,7 @@ fn disconnect_server(state: State<'_, AppState>, server_id: String) -> Result<()
     }
     log_stream::close_server(&state.log_streams, &server_id);
     terminal::close_server(&state.terminals, &server_id);
+    state.store.forget_session_password(&server_id);
     Ok(ssh::disconnect_server(&server_id)?)
 }
 
@@ -1808,6 +1841,7 @@ pub fn run() {
             reset_credentials,
             get_state,
             save_server,
+            set_ssh_password,
             set_connection_group,
             read_ssh_config,
             create_identity,

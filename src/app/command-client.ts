@@ -58,6 +58,7 @@ export const remoteOperationLabels: Record<string, string> = {
 /** Structured error payloads produced by the backend's `AppError`. */
 interface StructuredError {
   kind?: string;
+  serverId?: unknown;
   message?: string;
   host?: unknown;
   port?: unknown;
@@ -122,11 +123,16 @@ function hostKeyUnknown(error: unknown): HostKeyUnknown | null {
 
 type Recovery =
   | { type: "credentials" }
+  | { type: "sshPassword"; serverId: string; message: string }
   | { type: "mismatch"; mismatch: HostKeyMismatch }
   | { type: "unknown"; unknown: HostKeyUnknown }
   | null;
 
-function recoveryFor(error: unknown, retryWithMasterPassword: boolean, retryWithHostKey: boolean): Recovery {
+function recoveryFor(error: unknown, retryWithMasterPassword: boolean, retryWithHostKey: boolean, retryWithSshPassword: boolean): Recovery {
+  const structured = asStructured(error);
+  if (retryWithSshPassword && structured?.kind === "sshPasswordRequired" && typeof structured.serverId === "string" && typeof structured.message === "string") {
+    return { type: "sshPassword", serverId: structured.serverId, message: structured.message };
+  }
   if (retryWithMasterPassword && isCredentialError(error)) return { type: "credentials" };
   if (retryWithHostKey) {
     const mismatch = hostKeyMismatch(error);
@@ -146,6 +152,7 @@ export interface CommandClientOptions {
   unlockForCredentialError: (error: unknown) => Promise<void>;
   requestHostKeyDecision: (mismatch: HostKeyMismatch) => Promise<boolean>;
   requestHostKeyTrust: (unknown: HostKeyUnknown) => Promise<boolean>;
+  requestSshPassword?: (serverId: string, message: string) => Promise<void>;
   cancelRecovery?: () => void;
 }
 
@@ -195,14 +202,20 @@ export function createCommandClient(options: CommandClientOptions) {
     retryWithHostKey: boolean,
     beforeRetry: () => void,
     requestGeneration: number,
+    retryWithSshPassword: boolean,
   ): Promise<T> => {
     ensureCurrent(requestGeneration);
-    const recovery = recoveryFor(error, retryWithMasterPassword, retryWithHostKey);
+    const recovery = recoveryFor(error, retryWithMasterPassword, retryWithHostKey, retryWithSshPassword);
     if (!recovery) throw error;
     beforeRetry();
+    if (recovery.type === "sshPassword") {
+      if (!options.requestSshPassword) throw error;
+      await askRecovery(() => options.requestSshPassword!(recovery.serverId, recovery.message), requestGeneration);
+      return invokeCommand<T>(command, args, retryWithMasterPassword, retryWithHostKey, false);
+    }
     if (recovery.type === "credentials") {
       await askRecovery(() => options.unlockForCredentialError(error), requestGeneration);
-      return invokeCommand<T>(command, args, false, retryWithHostKey);
+      return invokeCommand<T>(command, args, false, retryWithHostKey, retryWithSshPassword);
     }
     const serverId = operationServerId(args);
     if (!serverId) throw error;
@@ -210,26 +223,26 @@ export function createCommandClient(options: CommandClientOptions) {
       if (await askRecovery(() => options.requestHostKeyDecision(recovery.mismatch), requestGeneration)) {
         await invokeBackend("replace_host_key", { serverId, expectedHost: recovery.mismatch.host, expectedPort: recovery.mismatch.port, expectedFingerprint: recovery.mismatch.newFingerprint });
         ensureCurrent(requestGeneration);
-        return invokeCommand<T>(command, args, retryWithMasterPassword, false);
+        return invokeCommand<T>(command, args, retryWithMasterPassword, false, retryWithSshPassword);
       }
     } else {
       if (await askRecovery(() => options.requestHostKeyTrust(recovery.unknown), requestGeneration)) {
         await invokeBackend("accept_host_key", { serverId, expectedHost: recovery.unknown.host, expectedPort: recovery.unknown.port, expectedFingerprint: recovery.unknown.fingerprint });
         ensureCurrent(requestGeneration);
-        return invokeCommand<T>(command, args, retryWithMasterPassword, false);
+        return invokeCommand<T>(command, args, retryWithMasterPassword, false, retryWithSshPassword);
       }
     }
     throw new OperationCancelledError();
   };
 
-  const invokeCommand = async <T>(command: string, args?: Record<string, unknown>, retryWithMasterPassword = true, retryWithHostKey = true): Promise<T> => {
+  const invokeCommand = async <T>(command: string, args?: Record<string, unknown>, retryWithMasterPassword = true, retryWithHostKey = true, retryWithSshPassword = true): Promise<T> => {
     const label = remoteOperationLabels[command];
     if (!label) {
       const requestGeneration = generation;
       try {
         return await invokeBackend<T>(command, args);
       } catch (error) {
-        return recoverAndRetry<T>(command, args, error, retryWithMasterPassword, retryWithHostKey, () => undefined, requestGeneration);
+        return recoverAndRetry<T>(command, args, error, retryWithMasterPassword, retryWithHostKey, () => undefined, requestGeneration, retryWithSshPassword);
       }
     }
 
@@ -250,7 +263,7 @@ export function createCommandClient(options: CommandClientOptions) {
           options.setActiveOperation(null);
           options.render();
         }
-      }, requestGeneration);
+      }, requestGeneration, retryWithSshPassword);
     } finally {
       if (options.getActiveOperation()?.id === operation.id) {
         options.setActiveOperation(null);

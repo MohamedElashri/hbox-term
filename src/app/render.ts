@@ -21,6 +21,7 @@ import { scrollCommandResultsIntoView, scrollContainerLogsIntoView, viewTransiti
 export function render(): void {
   const previousFocus = document.activeElement;
   const previousConnectionForm = root.querySelector<HTMLFormElement>('form[data-form="server"]');
+  const previousPasswordForm = root.querySelector<HTMLFormElement>('form[data-form="ssh-password"]');
   const settingsScroll = root.querySelector<HTMLElement>(".modal-settings")?.scrollTop;
   const previousContent = root.querySelector<HTMLElement>(".dock-main") ?? root.querySelector<HTMLElement>(".content-area");
   const previousServerList = root.querySelector<HTMLElement>(".server-list");
@@ -32,6 +33,7 @@ export function render(): void {
   root.dataset.theme = state.darkMode ? "dark" : "light";
   root.innerHTML = quickMode ? renderQuickShell() : `${renderTitlebar()}${state.loading ? renderLoading() : renderShell()}`;
   restoreConnectionForm(root, previousConnectionForm);
+  restoreConnectionForm(root, previousPasswordForm);
   const nextSettings = root.querySelector<HTMLElement>(".modal-settings");
   if (nextSettings && settingsScroll !== undefined) nextSettings.scrollTop = settingsScroll;
   const nextContent = root.querySelector<HTMLElement>(".dock-main") ?? root.querySelector<HTMLElement>(".content-area");

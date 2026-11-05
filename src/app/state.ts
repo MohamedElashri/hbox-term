@@ -72,6 +72,8 @@ export class AppState {
   editingServer: ServerProfile | null = null;
   renamingWorkspaceTabId: string | null = null;
   credentialStatus: CredentialStatus = { configured: false, unlocked: false };
+  sshPasswordPrompt: { serverId: string; message: string } | null = null;
+  finishSshPasswordWaiter: ((value: { password: string; remember: boolean } | null) => void) | null = null;
   masterPasswordPrompt: { mode: MasterPasswordPromptMode; error: string } | null = null;
   masterPasswordWaiter: Promise<string | null> | null = null;
   finishMasterPasswordWaiter: ((value: string | null) => void) | null = null;
