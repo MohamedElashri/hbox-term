@@ -44,7 +44,7 @@ check: node_modules ## Type-check and build the frontend, cargo check the backen
 test: test-ts test-rust ## Run all tests
 
 test-ts: node_modules ## Frontend tests (node --test)
-	node --test tests/
+	npm run test:frontend
 
 test-rust: ## Backend tests (cargo test)
 	cargo test $(CARGO_MANIFEST) --lib
