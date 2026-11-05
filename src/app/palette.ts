@@ -84,6 +84,8 @@ function buildItems(): PaletteItem[] {
     { title: `SSH to ${server.name}`, detail: `${server.username}@${server.host}`, kind: "Server" as const, run: async () => { await selectServer(server.id); await openNewTerminal(); } },
   ]);
   const app: PaletteItem[] = [
+    { title: "Manage connection library and backups", kind: "App", run: () => runAction("library-tools") },
+    { title: "Transfer queue", kind: "App", run: () => runAction("transfer-queue") },
     { title: "Saved workspaces", kind: "App", run: () => runAction("workspace-library") },
     { title: "New window", kind: "App", run: () => runAction("new-workspace-window") },
     { title: "Save workspace layout", kind: "App", run: () => runAction("save-workspace-layout") },

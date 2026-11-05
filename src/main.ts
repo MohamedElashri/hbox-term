@@ -1,3 +1,5 @@
+import { refreshTransferQueue } from "./app/transfer-queue";
+import { flushRemoteEdits } from "./app/terminal";
 import { installCredentialPrivacy } from "./app/credential-privacy";
 import { installWindowEvents } from "./app/window-events";
 import { confirmTerminalClose } from "./app/terminal-close";
@@ -41,9 +43,10 @@ async function prepareQuit(token: string): Promise<void> {
   preparedQuitTokens.add(token);
   if (preparedQuitTokens.size > 8) preparedQuitTokens.delete(preparedQuitTokens.values().next().value!);
   await windowReady;
-  if (!await confirmTerminalClose(state.terminalTabs, "Quit Ternway")) {
+  if (!await confirmTerminalClose(state.terminalTabs, "Quit Ternway", "quit")) {
     await invoke("acknowledge_quit", { token, ready: false }); return;
   }
+  if (!await flushRemoteEdits(state.terminalTabs)) { await invoke("acknowledge_quit", { token, ready: false }); return; }
   cancelCurrentOperation();
   let ready = false;
   try { if (!quickMode && bootstrapSucceeded) await saveSession(); ready = true; }
@@ -58,6 +61,8 @@ async function installEventListeners(): Promise<void> {
     about: () => { void runAction("show-about"); },
     updates: () => { void runAction("check-updates"); },
   }, listen));
+  state.terminalUnlisteners.push(await listen("library-changed", () => { void refreshSnapshot(false).then(() => render()); }));
+  state.terminalUnlisteners.push(await listen("transfer-queue-changed", () => { void refreshTransferQueue(); }));
   // Quit can be requested before this webview has installed its event listener.
   const pending = await invoke<string | null>("pending_quit");
   if (pending) void prepareQuit(pending);
@@ -83,7 +88,7 @@ async function installEventListeners(): Promise<void> {
       void confirm(`${remotePath} changed on the server since you opened it. Overwrite it with your version?`, { title: "File changed on the server", kind: "warning" })
         .then((overwrite) => { if (overwrite) void invoke("overwrite_remote_edit", { id }); });
     }
-  }));
+  }, { target: appWindow.label }));
   state.terminalUnlisteners.push(await listen<TransferProgress>("transfer-progress", (event) => {
     state.transfer = event.payload;
     syncTransferToast();
@@ -209,7 +214,8 @@ function startSessionSaving(): void {
     void saveSession().catch(error => showToast(`Could not save the workspace: ${errorText(error)}`, "info"));
   }, SESSION_SAVE_INTERVAL_MS);
   void appWindow.onCloseRequested(async event => {
-    if (!await confirmTerminalClose(state.terminalTabs, "Close window")) { event.preventDefault(); return; }
+    if (!await confirmTerminalClose(state.terminalTabs, "Close window", "window")) { event.preventDefault(); return; }
+    if (!await flushRemoteEdits(state.terminalTabs)) { event.preventDefault(); return; }
     cancelCurrentOperation();
     try {
       await saveSession();

@@ -74,6 +74,17 @@ impl RemoteFs {
             Self::Native(s) => Ok(RemoteFile::Native(s.open(p, true)?)),
         }
     }
+    pub fn write_existing(&self, p: &Path) -> Result<RemoteFile, FsError> {
+        match self {
+            Self::Managed(s) => Ok(RemoteFile::Managed(s.open_mode(
+                p,
+                ssh2::OpenFlags::WRITE,
+                0o600,
+                ssh2::OpenType::File,
+            )?)),
+            Self::Native(s) => Ok(RemoteFile::Native(s.write_existing(p)?)),
+        }
+    }
     pub fn opendir(&self, p: &Path) -> Result<RemoteDirectory, FsError> {
         match self {
             Self::Managed(s) => Ok(RemoteDirectory::Managed(s.opendir(p)?)),
@@ -161,6 +172,18 @@ impl RemoteDirectory {
             Self::Managed(s) => Ok(s.readdir()?),
             Self::Native(s) => s.read(),
         }
+    }
+}
+impl RemoteFile {
+    pub fn set_position(&mut self, offset: u64) -> std::io::Result<()> {
+        match self {
+            Self::Managed(s) => {
+                use std::io::Seek;
+                s.seek(std::io::SeekFrom::Start(offset))?;
+            }
+            Self::Native(s) => s.set_position(offset),
+        }
+        Ok(())
     }
 }
 impl Read for RemoteFile {

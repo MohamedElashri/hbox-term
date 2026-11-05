@@ -94,11 +94,21 @@ export function createTerminalSurface(tab: TerminalTab): TerminalSurface {
   return surface;
 }
 
-/** Uploads any last change from a remote-edit pane and removes the local copy. */
-function finishRemoteEdit(tab: TerminalTab): void {
-  if (!tab.remoteEditId) return;
-  void invoke("finish_remote_edit", { id: tab.remoteEditId }).catch(() => undefined);
-  tab.remoteEditId = undefined;
+const editFinishes = new Map<string, Promise<boolean>>();
+/** A failed save retains the local copy and remains retryable. */
+export function finishRemoteEdit(tab: TerminalTab): Promise<boolean> {
+  const id = tab.remoteEditId;
+  if (!id) return Promise.resolve(true);
+  const pending = editFinishes.get(id);
+  if (pending) return pending;
+  const finish = invoke("finish_remote_edit", { id }).then(() => { tab.remoteEditId = undefined; return true; }).catch(error => { showToast(String(error?.message ?? error), "info"); return false; }).finally(() => { editFinishes.delete(id); });
+  editFinishes.set(id, finish);
+  return finish;
+}
+
+export async function flushRemoteEdits(tabs: TerminalTab[]): Promise<boolean> {
+  for (const tab of tabs) if (tab.remoteEditId) { const pending = editFinishes.get(tab.remoteEditId); if (pending && !await pending) return false; if (!tab.remoteEditId) continue; try { await invoke("flush_remote_edit", { id: tab.remoteEditId }); } catch (error) { showToast(String(error), "info"); return false; } }
+  return true;
 }
 
 let renderPending = false;
@@ -301,7 +311,8 @@ async function openTerminal(placement: Placement, command?: string, title?: stri
       if (error instanceof OperationCancelledError || errorText(error).toLowerCase().includes("operation cancelled")) {
         tab.phase = "cancelled";
         await invoke("close_terminal", { sessionId: id }).catch(() => undefined);
-        disposeTerminalSurfaces([tab]);
+        if (!await finishRemoteEdit(tab)) { tab.closed = true; render(); return; }
+  disposeTerminalSurfaces([tab]);
         render();
         return;
       }
@@ -330,6 +341,7 @@ export async function closeTerminal(tabId: string, confirmed = false): Promise<v
   if (!confirmed && !await confirmTerminalClose([tab], "Close terminal pane")) return;
   if (tab.connecting && (!state.activeOperation || state.activeOperation.serverId === tab.serverId)) cancelCurrentOperation();
   if (tab.sessionId && !tab.closed) await invoke("close_terminal", { sessionId: tab.sessionId }).catch(() => undefined);
+  if (!await finishRemoteEdit(tab)) { tab.closed = true; render(); return; }
   disposeTerminalSurfaces([tab]);
   if (state.activeWorkspaceTabId && state.activeTerminalTabId) activeTerminalTabByWorkspace.set(state.activeWorkspaceTabId, state.activeTerminalTabId);
   if (isLocalWorkspace() && !activeTerminalGroups().length) { await openNewTerminal(); return; }

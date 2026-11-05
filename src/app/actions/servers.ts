@@ -300,7 +300,7 @@ export async function deleteActiveServer(): Promise<void> {
 export async function disconnectActiveServer(): Promise<void> {
   const serverId = state.activeServerId;
   if (!serverId) return;
-  if (!await confirmTerminalClose(state.terminalTabs.filter(tab => tab.serverId === serverId), "Disconnect server")) return;
+  if (!await confirmTerminalClose(state.terminalTabs.filter(tab => tab.serverId === serverId), "Disconnect server", "disconnect", serverId)) return;
   cancelCurrentOperation();
   clearRefreshTimer();
   await closeInteractiveSessions(serverId);

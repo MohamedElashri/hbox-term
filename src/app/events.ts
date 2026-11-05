@@ -1,3 +1,5 @@
+import { openLibraryTools, applyBulkConnections, exportLibraryBackup, restoreLibraryBackup, retryEditRecovery } from "./library-tools";
+import { openTransferQueue, refreshTransferQueue, transferAction, runQueue } from "./transfer-queue";
 import { showToast } from "./toasts";
 import { clearClipboardHistory } from "./terminal";
 import { composingText } from "./keybindings";
@@ -305,7 +307,8 @@ export async function runAction(action: string, target: HTMLElement = document.c
         importEntries = await invoke<SshConfigEntry[]>("read_ssh_config", { path });
         importSourcePath = path;
         form.querySelector<HTMLElement>("[data-import-hosts]")!.innerHTML = renderImportChoices(importEntries, new FormData(form).get("importMode") === "linked");
-        notice.textContent = "";
+        const reconciliation = await invoke<{existing: string[]; missing: string[]}>("inspect_import_source", { source: path, aliases: importEntries.map(entry => entry.alias) });
+        notice.textContent = `${reconciliation.existing.length} existing imported aliases will be reused. ${reconciliation.missing.length ? `Missing from this source, kept in your library: ${reconciliation.missing.join(", ")}.` : "No previously imported aliases are missing."}`;
       } catch (error) { notice.textContent = errorText(error); form.querySelector<HTMLElement>("[data-import-hosts]")!.textContent = ""; }
       break;
     }
@@ -326,6 +329,14 @@ export async function runAction(action: string, target: HTMLElement = document.c
       section?.focus({ preventScroll: true });
       break;
     }
+    case "library-tools": await openLibraryTools(); break;
+    case "transfer-queue": await openTransferQueue(); break;
+    case "run-transfer-queue": void runQueue(); break;
+    case "refresh-transfer-queue": await refreshTransferQueue(); break;
+    case "queue-job": await transferAction(target.dataset.jobId!, target.dataset.jobAction!); break;
+    case "export-library-backup": await exportLibraryBackup(root.querySelector<HTMLInputElement>("[data-backup-secrets]")?.checked ?? false); break;
+    case "restore-library-backup": await restoreLibraryBackup(); break;
+    case "retry-edit-recovery": await retryEditRecovery(target.dataset.recoveryId!, target.dataset.serverId!); break;
     case "lock-vault": await invoke("lock_credentials"); break;
     case "clear-private-history":
       clearClipboardHistory();
@@ -583,7 +594,7 @@ export async function handleSubmit(event: SubmitEvent): Promise<void> {
         ? linkedDraft(importEntries[index], importSourcePath, String(data.get("groupName") || ""))
         : importedDraft(importEntries[index], String(data.get("username") || ""), String(data.get("groupName") || ""), String(data.get("identityId") || "")));
       for (let i = 0; i < drafts.length; i++) {
-        await invoke("save_server", { draft: drafts[i] });
+        await invoke("import_connection", { draft: drafts[i], source: importSourcePath, alias: importEntries[selected[i]].alias, updateExisting: data.get("updateExisting") === "on" });
         const checkbox = form.querySelector<HTMLInputElement>(`input[name="hosts"][value="${selected[i]}"]`)!;
         checkbox.checked = false; checkbox.disabled = true; saved++;
       }
@@ -591,6 +602,7 @@ export async function handleSubmit(event: SubmitEvent): Promise<void> {
     } catch (error) { notice.textContent = `Imported ${saved} connection(s). ${errorText(error)}`; }
     finally { await refreshSnapshot(false); button.disabled = false; }
   }
+  else if (kind === "bulk-connections") { try { await applyBulkConnections(form); } catch (error) { setError(error); } }
   else if (kind === "identity") {
     if (!form.reportValidity()) return;
     const data = new FormData(form);

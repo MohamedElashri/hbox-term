@@ -1,3 +1,5 @@
+import { libraryToolsContent } from "./library-tools";
+import { transferQueueContent } from "./transfer-queue";
 import { workspaceLibraryContent } from "./workspace-library";
 import { renderAboutContent } from "./about";
 import { icon } from "../icons";
@@ -42,6 +44,8 @@ export function finishAppDialog(value: boolean): void {
 }
 
 export function renderModal(): string {
+  if (state.modal === "library-tools") return renderModalShell("Connection library", "Organize, back up and recover your connections.", libraryToolsContent(), "modal-settings modal-library");
+  if (state.modal === "transfers") return renderModalShell("Transfer queue", "Review, pause and retry file transfers.", transferQueueContent(), "modal-settings modal-library");
   if (state.modal === "workspaces") return renderModalShell("Workspaces", "Saved connections and terminal layouts for each project.", workspaceLibraryContent(), "modal-workspaces");
   if (state.modal === "server") return renderServerModal();
   if (state.modal === "workspace-tab-rename") return renderWorkspaceTabRenameModal();
@@ -265,7 +269,7 @@ export function renderSecurityModal(): string {
           ${renderConfigSettings()}
         </section>
         <section class="settings-group" id="settings-connections" tabindex="-1" aria-labelledby="settings-connections-title">
-          <h3 id="settings-connections-title">Connections</h3>
+          <h3 id="settings-connections-title">Connections</h3><div class="settings-row"><div class="settings-row-copy"><h4>Connection library</h4><p>Bulk organization, portable backups and recovered remote edits.</p></div><button class="button button-quiet" data-action="library-tools">Manage library</button></div><div class="settings-row"><div class="settings-row-copy"><h4>Transfer queue</h4><p>Review paused jobs and resume interrupted file transfers.</p></div><button class="button button-quiet" data-action="transfer-queue">View transfers</button></div>
           <div class="settings-row"><div class="settings-row-copy"><h4>SSH identities</h4><p>Manage the SSH agents used by your saved connections.</p></div><button class="button button-quiet" data-action="manage-identities">Manage identities</button></div>
           <div class="settings-row"><div class="settings-row-copy"><h4>Credential vault <span class="settings-status">${status}</span></h4><p>Saved passwords stay encrypted on this device.</p></div><button class="button button-quiet" data-action="change-master-password" ${configured ? "" : "disabled"}>Change master password</button></div>
           ${state.credentialSettingsNotice ? `<div class="security-notice" role="status">${icon("check")}<span>${escapeHtml(state.credentialSettingsNotice)}</span></div>` : ""}
@@ -353,7 +357,7 @@ function renderSshImportModal(): string {
     <label class="field"><span>Destination group</span><input name="groupName" value="Imported" required/></label>
     <label class="field"><span>Default username <small>for hosts without User</small></span><input name="username" placeholder="ubuntu" disabled/></label>
     <label class="field"><span>SSH agent identity <small>optional; overrides imported username and key</small></span><select name="identityId" disabled><option value="">Use imported key or configure password later</option>${state.snapshot.identities.filter(i => i.provider === "sshAgent").map(i => `<option value="${escapeHtml(i.id)}">${escapeHtml(i.name)}</option>`).join("")}</select></label>
-    <p>Existing profiles are kept. Imported profiles do not connect automatically. OpenSSH-linked profiles always read the source config when connecting.</p>
+    <label class="favorite-check"><input type="checkbox" name="updateExisting"/><span></span>Update routing and authentication of existing imports</label><p>Repeated imports reuse existing connections. Unchecked: keep existing settings. Checked: reconcile selected aliases while preserving names, groups, tags and notes. Missing aliases are kept for review. Existing profiles are kept. Imported profiles do not connect automatically. OpenSSH-linked profiles always read the source config when connecting.</p>
     <div data-import-error role="status"></div>
     <div class="modal-actions"><button type="button" class="button button-quiet" data-action="close-modal">Close</button><button type="submit" class="button button-primary">Import selected hosts</button></div>
   </form>`, "modal-ssh-import");

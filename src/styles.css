@@ -721,3 +721,12 @@ h1 { margin-bottom: 0; font: 600 35px/1.05 var(--font-display); letter-spacing: 
 @media (max-width: 760px) { .saved-workspace { flex-wrap: wrap; } .saved-workspace-actions { width: 100%; justify-content: flex-end; } }
 
 .term-tab-dot.saved { background: var(--term-muted); opacity: .7; }
+
+/* Library tools share the connection list's contrast and compact spacing. */
+.modal-settings .import-hosts { max-height: 260px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; background: var(--canvas); }
+.modal-settings .modal-body > h3 { margin-top: 16px; }
+.modal-settings .modal-body .panel { padding: 14px; overflow-wrap: anywhere; }
+.modal-settings .modal-body .security-actions { flex-wrap: wrap; }
+.modal-library { display: flex; flex-direction: column; overflow: hidden; max-height: calc(100vh - 48px); }
+.modal-library .modal-head { flex: 0 0 auto; }
+.modal-library > .modal-body { min-height: 0; overflow-y: auto; }

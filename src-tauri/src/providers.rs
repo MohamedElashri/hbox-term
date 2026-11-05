@@ -12,7 +12,7 @@ use serde_json::Value;
 use ssh2::{ErrorCode, FileStat, RenameFlags};
 use std::collections::HashMap;
 use std::fs::{self, File};
-use std::io::{Read, Write};
+use std::io::{Read, Seek, Write};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::{atomic::AtomicBool, Arc};
@@ -2819,6 +2819,8 @@ pub fn file_action(
     })
 }
 
+pub struct TransferOptions<'a> { pub operation_id: Option<&'a str>, pub queue_id: Option<&'a str> }
+
 pub fn upload_path(
     store: &Store,
     server_id: &str,
@@ -2826,15 +2828,17 @@ pub fn upload_path(
     remote_path_value: &str,
     overwrite: bool,
     app: AppHandle,
-    operation_id: Option<&str>,
+    options: TransferOptions<'_>,
 ) -> Result<TransferProgress, String> {
+    let operation_id = options.operation_id;
+    let queue_id = options.queue_id;
     let source = resolve_local_path(local_path);
     if !source.exists() {
         return Err("The local upload source does not exist".to_string());
     }
     let metadata = fs::metadata(&source)
         .map_err(|error| format!("Could not inspect upload source: {error}"))?;
-    let transfer_id = Uuid::new_v4().to_string();
+    let transfer_id = queue_id.map(str::to_owned).unwrap_or_else(|| Uuid::new_v4().to_string());
     let (total_bytes, total_files) = if metadata.is_dir() {
         WalkDir::new(&source)
             .into_iter()
@@ -2956,11 +2960,13 @@ pub fn download_path(
     remote_source: &str,
     local_target: &str,
     app: AppHandle,
-    operation_id: Option<&str>,
+    options: TransferOptions<'_>,
 ) -> Result<TransferProgress, String> {
+    let operation_id = options.operation_id;
+    let queue_id = options.queue_id;
     let remote_source = remote_path(remote_source);
     let local_target = resolve_local_path(local_target);
-    let transfer_id = Uuid::new_v4().to_string();
+    let transfer_id = queue_id.map(str::to_owned).unwrap_or_else(|| Uuid::new_v4().to_string());
     let file_staging =
         local_target.with_file_name(format!(".ternway-download-{transfer_id}.part"));
     let directory_staging = local_target.join(format!(".ternway-download-{transfer_id}"));
@@ -3017,7 +3023,7 @@ pub fn download_path(
                 0,
                 cancellation.as_ref(),
             )?;
-            fs::rename(&directory_staging, &destination)
+            crate::transfer_queue::commit_download(&directory_staging, &destination)
                 .map_err(|error| format!("Could not finish download: {error}"))?;
             result
         } else {
@@ -3044,7 +3050,7 @@ pub fn download_path(
                 0,
                 cancellation.as_ref(),
             )?;
-            fs::rename(&file_staging, &local_target)
+            crate::transfer_queue::commit_download(&file_staging, &local_target)
                 .map_err(|error| format!("Could not finish download: {error}"))?;
             result
         };
@@ -3067,9 +3073,8 @@ pub fn download_path(
             Ok(done)
         }
         Err(error) => {
-            if file_staging_created {
-                let _ = fs::remove_file(&file_staging);
-            }
+            // File checkpoints are retained for explicit retry/resume.
+            let _ = file_staging_created;
             if directory_staging_created {
                 let _ = fs::remove_dir_all(&directory_staging);
             }
@@ -3306,19 +3311,35 @@ fn upload_file(
     let temporary_path = destination.with_file_name(format!(
         ".{}.ternway-upload-{}.part",
         name.to_string_lossy(),
-        Uuid::new_v4()
+        transfer_id
     ));
     let original_permissions = overwrite
         .then(|| sftp.stat(destination).ok().and_then(|stat| stat.perm))
         .flatten()
         .map(|permissions| permissions & 0o7777);
     let write_result = (|| -> Result<(), String> {
-        let mut output = sftp.create(&temporary_path).map_err(|error| {
+        let source_before = input.metadata().map_err(|e| e.to_string())?;
+        let offset = match sftp.lstat(&temporary_path) {
+            Ok(stat) => {
+                if !is_regular_file(stat.perm) { return Err("Upload checkpoint is not a regular file".into()); }
+                let size = stat.size.ok_or("Upload checkpoint size unavailable")?;
+                if size > source_before.len() { return Err("Upload checkpoint exceeds source length; restart with a new queue entry".into()); }
+                let mut partial = sftp.open(&temporary_path).map_err(|e| e.to_string())?;
+                crate::transfer_queue::verify_prefix(&mut input, &mut partial, size, cancellation)?;
+                size
+            }
+            Err(error) if error.code() == ErrorCode::SFTP(2) => 0,
+            Err(error) => return Err(error.to_string()),
+        };
+        input.seek(std::io::SeekFrom::Start(offset)).map_err(|e| e.to_string())?;
+        completed_bytes += offset;
+        let mut output = if offset > 0 { sftp.write_existing(&temporary_path) } else { sftp.create(&temporary_path) }.map_err(|error| {
             format!(
                 "Could not create upload staging file {}: {error}",
                 temporary_path.display()
             )
         })?;
+        output.set_position(offset).map_err(|e| e.to_string())?;
         let mut buffer = [0u8; 128 * 1024];
         loop {
             ensure_not_cancelled(cancellation)?;
@@ -3347,6 +3368,8 @@ fn upload_file(
                 ),
             );
         }
+        let after = input.metadata().map_err(|e| e.to_string())?;
+        if after.len() != source_before.len() || after.modified().ok() != source_before.modified().ok() { return Err("Upload source changed during transfer; checkpoint retained".into()); }
         output.flush().map_err(|error| {
             format!(
                 "Could not finish writing {}: {error}",
@@ -3375,16 +3398,9 @@ fn upload_file(
         }
         Ok(())
     })();
-    if let Err(error) = write_result {
-        let _ = sftp.unlink(&temporary_path);
-        return Err(error);
-    }
-    if let Err(error) = ensure_not_cancelled(cancellation) {
-        let _ = sftp.unlink(&temporary_path);
-        return Err(error);
-    }
+    write_result?;
+    ensure_not_cancelled(cancellation)?;
     if let Err(error) = rename_staging(sftp, &temporary_path, destination, overwrite) {
-        let _ = sftp.unlink(&temporary_path);
         return Err(format!(
             "Could not finish uploading {}: {error}",
             destination.display()
@@ -3435,51 +3451,20 @@ fn record_upload_conflict(
     }
 }
 
-fn rename_staging(
+pub(crate) fn rename_staging(
     sftp: &crate::remote_fs::RemoteFs,
     temporary_path: &Path,
     destination: &Path,
     overwrite: bool,
 ) -> Result<(), crate::remote_fs::FsError> {
-    // Many SFTP servers do not implement the posix-rename@openssh.com extension
-    // behind ATOMIC/NATIVE, and some do not implement OVERWRITE either. They
-    // answer those renames with a generic SSH_FX_FAILURE (SFTP error 4), which
-    // previously surfaced as "Could not finish uploading ...: [SFTP(4)] failure"
-    // even though the staging upload itself succeeded. Fall back from the
-    // preferred atomic rename down to the portable unlink + rename sequence.
+    // Never unlink the destination to emulate replacement: a failed final rename
+    // must leave the original file intact. Servers without safe replacement fail.
     if overwrite {
-        if sftp
-            .rename(
-                temporary_path,
-                destination,
-                Some(RenameFlags::ATOMIC | RenameFlags::NATIVE | RenameFlags::OVERWRITE),
-            )
-            .is_ok()
-        {
-            return Ok(());
-        }
-        if sftp
-            .rename(temporary_path, destination, Some(RenameFlags::OVERWRITE))
-            .is_ok()
-        {
-            return Ok(());
-        }
-        // Last resort for servers without any overwrite-aware rename: remove
-        // the destination first, then rename without overwrite flags.
-        let _ = sftp.unlink(destination);
-        sftp.rename(temporary_path, destination, None)
+        sftp.rename(temporary_path, destination, Some(RenameFlags::ATOMIC | RenameFlags::NATIVE | RenameFlags::OVERWRITE))
+            .or_else(|_| sftp.rename(temporary_path, destination, Some(RenameFlags::OVERWRITE)))
     } else {
-        if sftp
-            .rename(
-                temporary_path,
-                destination,
-                Some(RenameFlags::ATOMIC | RenameFlags::NATIVE),
-            )
-            .is_ok()
-        {
-            return Ok(());
-        }
-        sftp.rename(temporary_path, destination, None)
+        // POSIX rename extensions can overwrite a destination created after preflight.
+        sftp.rename(temporary_path, destination, Some(RenameFlags::empty()))
     }
 }
 
@@ -3605,11 +3590,20 @@ fn download_file(
     let mut input = sftp
         .open(source)
         .map_err(|error| format!("Could not read {}: {error}", source.display()))?;
-    let mut output = File::options()
-        .write(true)
-        .create_new(true)
-        .open(destination)
-        .map_err(|error| format!("Could not create {}: {error}", destination.display()))?;
+    let before = sftp.stat(source).map_err(|e| e.to_string())?;
+    let existing = fs::symlink_metadata(destination).ok();
+    if existing.as_ref().is_some_and(|m| !m.is_file()) { return Err("Download checkpoint is not a regular file".into()); }
+    let offset = existing.as_ref().map(|m| m.len()).unwrap_or(0);
+    if offset > before.size.ok_or("Remote file size unavailable")? { return Err("Remote file changed; checkpoint exceeds source size".into()); }
+    if offset > 0 {
+        let mut partial = File::open(destination).map_err(|e| e.to_string())?;
+        crate::transfer_queue::verify_prefix(&mut input, &mut partial, offset, cancellation)?;
+    }
+    input.set_position(offset).map_err(|e| e.to_string())?;
+    completed_bytes += offset;
+    let mut options = File::options(); options.write(true);
+    if existing.is_some() { options.append(true); } else { use std::os::unix::fs::OpenOptionsExt; options.create_new(true).mode(0o600); }
+    let mut output = options.open(destination).map_err(|e| e.to_string())?;
     let mut buffer = [0u8; 128 * 1024];
     loop {
         ensure_not_cancelled(cancellation)?;
@@ -3639,6 +3633,9 @@ fn download_file(
         );
     }
     ensure_not_cancelled(cancellation)?;
+    output.sync_all().map_err(|e| e.to_string())?;
+    let after = sftp.stat(source).map_err(|e| e.to_string())?;
+    if before.size != after.size || before.mtime != after.mtime { return Err("Remote source changed during transfer; checkpoint retained".into()); }
     completed_files += 1;
     Ok((completed_bytes, completed_files))
 }
@@ -3670,3 +3667,5 @@ fn progress(
 fn emit_progress(app: &AppHandle, payload: &TransferProgress) {
     let _ = app.emit("transfer-progress", payload);
 }
+
+fn is_regular_file(perm: Option<u32>) -> bool { perm.is_some_and(|p| p & 0o170000 == 0o100000) }

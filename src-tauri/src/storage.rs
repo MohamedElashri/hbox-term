@@ -10,8 +10,10 @@ use zeroize::Zeroizing;
 
 #[derive(Clone)]
 pub struct Store {
-    connection: Arc<Mutex<Connection>>,
-    credentials: CredentialStore,
+    pub(crate) connection: Arc<Mutex<Connection>>,
+    pub(crate) credentials: CredentialStore,
+    pub(crate) import_lock: Arc<Mutex<()>>,
+    pub(crate) mutation_lock: Arc<Mutex<()>>,
     session_passwords: Arc<Mutex<HashMap<String, Zeroizing<String>>>>,
 }
 
@@ -118,16 +120,21 @@ impl Store {
         crate::identities::migrate(&mut connection, path)?;
         connection
             .execute_batch(
-                "CREATE TABLE IF NOT EXISTS password_references (server_id TEXT PRIMARY KEY NOT NULL REFERENCES servers(id) ON DELETE CASCADE, reference_json TEXT NOT NULL);
+                "CREATE TABLE IF NOT EXISTS import_origins (source_key TEXT PRIMARY KEY NOT NULL, server_id TEXT NOT NULL REFERENCES servers(id) ON DELETE CASCADE, snapshot_json TEXT NOT NULL);
+                 CREATE TABLE IF NOT EXISTS restore_marker (token TEXT NOT NULL);
+                 CREATE TABLE IF NOT EXISTS password_references (server_id TEXT PRIMARY KEY NOT NULL REFERENCES servers(id) ON DELETE CASCADE, reference_json TEXT NOT NULL);
                  CREATE TABLE IF NOT EXISTS openssh_connections (
             server_id TEXT PRIMARY KEY NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
             reference_json TEXT NOT NULL
         );",
             )
             .map_err(|e| format!("Could not initialize OpenSSH connections: {e}"))?;
+        crate::library_backup::recover_restore(&connection, credentials_path)?;
         Ok(Self {
             connection: Arc::new(Mutex::new(connection)),
             credentials: CredentialStore::open(credentials_path)?,
+            import_lock: Arc::new(Mutex::new(())),
+            mutation_lock: Arc::new(Mutex::new(())),
             session_passwords: Arc::new(Mutex::new(HashMap::new())),
         })
     }
@@ -202,6 +209,7 @@ impl Store {
         current: &str,
         new: &str,
     ) -> Result<crate::models::CredentialStatus, String> {
+        let _mutation = self.mutation_lock.lock().map_err(|e| e.to_string())?;
         let status = self.credentials.change_master_password(current, new)?;
         self.session_passwords
             .lock()
@@ -211,6 +219,7 @@ impl Store {
     }
 
     pub fn reset_credentials(&self, password: &str) -> Result<(), String> {
+        let _mutation = self.mutation_lock.lock().map_err(|e| e.to_string())?;
         self.credentials.reset(password)?;
         self.session_passwords
             .lock()
@@ -225,6 +234,7 @@ impl Store {
         password: &str,
         remember: bool,
     ) -> Result<(), String> {
+        let _mutation = self.mutation_lock.lock().map_err(|e| e.to_string())?;
         let profile = self.get_server(server_id)?;
         if !matches!(profile.auth_method, AuthMethod::Password) {
             return Err("This connection does not use password authentication".into());
@@ -312,6 +322,7 @@ impl Store {
     }
 
     pub fn save_server(&self, draft: &ServerDraft) -> Result<ServerProfile, String> {
+        let _mutation = self.mutation_lock.lock().map_err(|e| e.to_string())?;
         let name = required(&draft.name, "server name")?;
         if let Some(reference) = &draft.password_reference {
             reference.validate()?;
@@ -570,6 +581,7 @@ impl Store {
     }
 
     pub fn delete_server(&self, id: &str) -> Result<(), String> {
+        let _mutation = self.mutation_lock.lock().map_err(|e| e.to_string())?;
         self.credentials.remove_server(id)?;
         self.forget_session_password(id);
         let connection = self

@@ -12,9 +12,9 @@ The preceding QA/password fixes and native OpenSSH support are merged in #6 and 
    restoring a layout must not imply resuming a process or running remote commands.
 4. **Terminal quality — merged in #12.** Keyboard/IME/Unicode/full-screen-app coverage, resize/output
    stress and protection when closing active jobs.
-5. **Credentials — in progress.** External credential references, provider flows and live verification,
+5. **Credentials — merged in #13; live provider reads deferred by request.** External credential references, provider flows and live verification,
    manual/idle/screen locking and clipboard/scrollback/log privacy controls.
-6. **Library, transfers and portability — pending.** Deduplicated imports, source reconciliation,
+6. **Library, transfers and portability — in progress.** Deduplicated imports, source reconciliation,
    bulk editing, resumable queued transfers and versioned backup/restore with explicit secrets.
 7. **Release confidence — pending.** Native GUI and platform coverage, soak/update recovery,
    properly signed/notarized macOS artifacts and documented release gates.
