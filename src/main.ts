@@ -1,3 +1,4 @@
+import { installCredentialPrivacy } from "./app/credential-privacy";
 import { installWindowEvents } from "./app/window-events";
 import { confirmTerminalClose } from "./app/terminal-close";
 import { cancelCurrentOperation } from "./app/session";
@@ -51,6 +52,7 @@ async function prepareQuit(token: string): Promise<void> {
 }
 
 async function installEventListeners(): Promise<void> {
+  await installCredentialPrivacy();
   state.terminalUnlisteners.push(...await installWindowEvents(appWindow.label, {
     quit: token => { void prepareQuit(token); },
     about: () => { void runAction("show-about"); },

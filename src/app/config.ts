@@ -24,6 +24,8 @@ export interface TerminalConfig {
   cursorStyle: CursorStyle;
   macosOptionAsAlt: boolean;
   confirmCloseSurface: boolean;
+  clipboardHistory: boolean;
+  saveScrollback: boolean;
   /** null: blink unless the program turns it off (Ghostty's default). */
   cursorBlink: boolean | null;
   copyOnSelect: "false" | "true" | "clipboard";
@@ -79,6 +81,8 @@ export const DEFAULT_CONFIG: TerminalConfig = {
   cursorStyle: "block",
   macosOptionAsAlt: false,
   confirmCloseSurface: true,
+  clipboardHistory: false,
+  saveScrollback: false,
   cursorBlink: null,
   copyOnSelect: "true",
   pasteProtection: true,
@@ -204,6 +208,12 @@ export function parseConfig(entries: ConfigEntry[]): ParsedConfig {
         else config.waitAfterCommand = flag;
         break;
       }
+      case "clipboard-history":
+      case "save-scrollback":
+        if (value !== "true" && value !== "false") invalid();
+        else if (key === "clipboard-history") config.clipboardHistory = value === "true";
+        else config.saveScrollback = value === "true";
+        break;
       case "scrollback-limit": {
         const bytes = Number(value);
         if (Number.isFinite(bytes) && bytes >= 0) config.scrollbackLimit = bytes; else invalid();

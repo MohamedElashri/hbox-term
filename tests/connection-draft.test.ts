@@ -80,3 +80,13 @@ test("OpenSSH aliases cannot smuggle options or additional arguments", () => {
 test("OpenSSH sharing can defer to configured multiplexing", () => {
   assert.equal(connectionDraft(form({ authMethod: "openSsh", openSshAlias: "work", openSshSharing: "config" })).openSsh?.shareConnection, false);
 });
+
+test("external password references replace password copies and require explicit valid source", () => {
+  const draft = connectionDraft(form({ passwordProvider: "onePassword", passwordReference: " op://Work/QA/password " }), "existing");
+  assert.deepEqual(draft.passwordReference, { provider: "onePassword", reference: "op://Work/QA/password" });
+  assert.equal(Object.hasOwn(draft, "password"), false);
+  assert.throws(() => connectionDraft(form({ passwordProvider: "onePassword", passwordReference: "" })), /reference/);
+  assert.throws(() => connectionDraft(form({ passwordProvider: "shell", passwordReference: "anything" })), /provider/);
+  assert.throws(() => connectionDraft(form({ passwordProvider: "bitwarden", passwordReference: "id", password: "secret" })), /empty/);
+  assert.equal(connectionDraft(form({ authMethod: "openSsh", openSshAlias: "work", passwordProvider: "onePassword", passwordReference: "unused" })).passwordReference, undefined);
+});

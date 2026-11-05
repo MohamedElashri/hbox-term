@@ -1,3 +1,5 @@
+import { showToast } from "./toasts";
+import { clearClipboardHistory } from "./terminal";
 import { composingText } from "./keybindings";
 import { openWorkspaceLibrary, saveWorkspaceLayout, openSavedWorkspace, deleteSavedWorkspace } from "./workspace-library";
 import { loadAboutMetadata, aboutBuildSummary } from "./about";
@@ -324,6 +326,11 @@ export async function runAction(action: string, target: HTMLElement = document.c
       section?.focus({ preventScroll: true });
       break;
     }
+    case "lock-vault": await invoke("lock_credentials"); break;
+    case "clear-private-history":
+      clearClipboardHistory();
+      for (const viewer of [state.logsViewer, state.containerLogViewer]) { if (viewer) { await stopLogViewer(viewer, "stopped"); viewer.text = ""; } }
+      render(); showToast("Clipboard and log history cleared.", "info"); break;
     case "credential-settings": state.credentialSettingsError = ""; state.credentialSettingsNotice = ""; state.modal = "security"; render(); break;
     case "change-master-password": state.credentialSettingsError = ""; state.credentialSettingsNotice = ""; state.modal = "change-password"; render(); break;
     case "reset-credentials": state.credentialSettingsError = ""; state.credentialSettingsNotice = ""; state.modal = "reset-credentials"; render(); break;

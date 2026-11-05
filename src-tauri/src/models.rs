@@ -46,6 +46,8 @@ pub struct ServerProfile {
     pub open_ssh: Option<OpenSshConfig>,
     #[serde(default)]
     pub identity_id: Option<String>,
+    #[serde(default)]
+    pub password_reference: Option<crate::secret_provider::PasswordReference>,
     pub key_path: Option<String>,
     pub jump_host_id: Option<String>,
     pub group_name: Option<String>,
@@ -80,6 +82,8 @@ pub struct ServerDraft {
     pub open_ssh: Option<OpenSshConfig>,
     #[serde(default)]
     pub identity_id: Option<String>,
+    #[serde(default)]
+    pub password_reference: Option<crate::secret_provider::PasswordReference>,
     pub key_path: Option<String>,
     #[serde(default)]
     pub jump_host_id: Option<String>,

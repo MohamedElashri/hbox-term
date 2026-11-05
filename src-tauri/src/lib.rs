@@ -4,6 +4,8 @@ mod appimage;
 mod config;
 mod child_process;
 mod credentials;
+mod secret_provider;
+mod vault_lock;
 mod disk;
 mod editor;
 mod identities;
@@ -210,6 +212,15 @@ impl AppState {
 fn get_credential_status(state: State<'_, AppState>) -> CredentialStatus {
     state.store.credential_status()
 }
+
+#[tauri::command]
+fn lock_credentials(app: AppHandle, state: State<'_, AppState>) {
+    state.store.lock_credentials();
+    let _ = app.emit("vault-locked", ());
+}
+
+#[tauri::command]
+fn credential_activity(state: State<'_, AppState>) { state.store.credential_activity(); }
 
 #[tauri::command(async)]
 fn unlock_credentials(
@@ -1882,6 +1893,7 @@ pub fn run() {
             }
             let state = AppState::open(data_dir).map_err(std::io::Error::other)?;
             app.manage(state);
+            vault_lock::install(app.handle());
             desktop_windows::setup(app.handle()).map_err(std::io::Error::other)?;
             // `ternway --toggle-quick` as the first launch opens only the quick terminal.
             let quick_only = std::env::args().any(|argument| argument == quick::TOGGLE_FLAG);
@@ -1899,6 +1911,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             app_metadata,
             get_credential_status,
+            lock_credentials,
+            credential_activity,
             unlock_credentials,
             change_master_password,
             reset_credentials,

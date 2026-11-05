@@ -1,3 +1,4 @@
+import { ClipboardHistory } from "./clipboard-history";
 import { confirmTerminalClose } from "./terminal-close";
 import { parseSavedLayout, type SavedPane, type SavedSession } from "./saved-layout";
 export type { SavedPane, SavedSession } from "./saved-layout";
@@ -414,7 +415,7 @@ export function snapshotSession(): SavedSession {
     for (const id of leaves(group.root)) {
       const tab = state.terminalTabs.find(item => item.id === id);
       if (!tab || tab.remoteEditId) { root = root && removeLeaf(root, id); continue; }
-      panes[id] = { cwd: tab.cwd, profile: tab.profile, snapshot: terminalSurfaces.get(id)?.snapshot(SNAPSHOT_LINES) };
+      panes[id] = { cwd: tab.cwd, profile: tab.profile, snapshot: state.terminalConfig.config.saveScrollback ? terminalSurfaces.get(id)?.snapshot(SNAPSHOT_LINES) : undefined };
     }
     if (!root) continue;
     if (state.activeTerminalTabId && leaves(root).includes(state.activeTerminalTabId)) activeGroup = groups.length;
@@ -793,20 +794,15 @@ export function pasteIntoFocused(text: string): boolean {
 }
 
 // Copies and pastes made in ternway, newest first; kept in memory only.
-const CLIPBOARD_HISTORY_SIZE = 25;
-const clipboardHistory: string[] = [];
-
-function rememberClipboard(text: string): void {
-  if (!text.trim()) return;
-  const existing = clipboardHistory.indexOf(text);
-  if (existing >= 0) clipboardHistory.splice(existing, 1);
-  clipboardHistory.unshift(text);
-  clipboardHistory.length = Math.min(clipboardHistory.length, CLIPBOARD_HISTORY_SIZE);
-}
+const clipboardHistory = new ClipboardHistory();
+export function clearClipboardHistory(): void { clipboardHistory.clear(); }
+function rememberClipboard(text: string): void { clipboardHistory.remember(text, state.terminalConfig.config.clipboardHistory); }
 
 function showPasteHistory(surface: TerminalSurface): void {
-  if (!clipboardHistory.length) { showToast("Nothing copied or pasted in Ternway yet.", "info"); return; }
-  openPicker("Paste from history…", clipboardHistory.map((text): PaletteItem => {
+  if (!state.terminalConfig.config.clipboardHistory) { clearClipboardHistory(); showToast("Clipboard history is disabled. Enable clipboard-history in your config to opt in.", "info"); return; }
+  const values = clipboardHistory.values();
+  if (!values.length) { showToast("Nothing copied or pasted in Ternway yet.", "info"); return; }
+  openPicker("Paste from history…", values.map((text): PaletteItem => {
     const lines = text.split("\n");
     return {
       title: (lines.find((line) => line.trim()) ?? "").trim().slice(0, 120),
