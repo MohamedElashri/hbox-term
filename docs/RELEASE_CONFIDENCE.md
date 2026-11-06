@@ -83,6 +83,10 @@ The previous ad-hoc distribution fallback is removed. The build must pass Develo
 signature/hardened-runtime verification, Gatekeeper assessment and stapled-ticket checks
 before the release can publish. Existing published releases cannot be modified by a rerun.
 Local ad-hoc QA builds remain available and are not production release artifacts.
+The macOS installer checks the mounted app's signature, Gatekeeper approval and stapled
+notarization ticket before replacing an installed copy. It keeps quarantine protections
+intact and detaches the image after verification failures. Mocked installer tests cover
+successful verification and rejection at each gate without mounting or installing anything.
 
 Configure these GitHub Actions **secrets** yourself through repository settings:
 

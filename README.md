@@ -37,9 +37,9 @@ to pin a release.
 | Linux x86_64 / ARM64 | `.deb`, `.rpm` or `.AppImage` |
 
 > [!NOTE]
-> **macOS:** the app is not notarized, so macOS blocks a downloaded copy ("Ternway is damaged"
-> or "cannot be opened"). After moving it to Applications, allow it with
-> `xattr -dr com.apple.quarantine /Applications/Ternway.app`. The install script does this for you.
+> **macOS:** new release packages require Developer ID signing and notarization. The installer
+> checks the signature, Gatekeeper approval and notarization ticket before replacing the app.
+> Production signing is being prepared; use a source build for local testing in the meantime.
 
 ## Development
 
