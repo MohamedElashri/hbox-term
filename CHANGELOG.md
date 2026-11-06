@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.1 - 2026-11-06
+## 0.3.1 - 2026-11-07
 
 - Reduce the header space above remote terminal sessions.
 - Fix copying command output that has no final newline.
