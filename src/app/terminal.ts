@@ -83,7 +83,8 @@ export function createTerminalSurface(tab: TerminalTab): TerminalSurface {
     onClosed: (message) => {
       if (!state.terminalTabs.includes(tab) || tab.closed) return;
       tab.closed = true; tab.connecting = false; tab.phase = "disconnected";
-      if (!state.terminalTabs.some(other => other !== tab && other.serverId === tab.serverId && !other.closed && !other.connecting)) connectedServerIds.delete(tab.serverId);
+      // A shell exiting does not close the cached SSH connection used by remote
+      // tools. Connection health, rather than pane count, owns that status.
       finishRemoteEdit(tab);
       if (tab.serverId === LOCAL_SERVER_ID && !profileConfig(tab.profile).waitAfterCommand) { void closeTerminal(tab.id); return; }
       surface.notice(message);

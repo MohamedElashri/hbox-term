@@ -5,6 +5,7 @@
 - Reduce the header space above remote terminal sessions.
 - Fix copying command output that has no final newline.
 - Fix terminal tabs getting stuck when a drag ends outside the tab bar.
+- Keep remote tools available after an SSH terminal exits.
 
 ## 0.3.0 - 2026-11-06
 

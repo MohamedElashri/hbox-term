@@ -285,12 +285,14 @@ try:
     click('[data-action="clear-terminal"]')
     remote_input('exit\n')
     wait(lambda: shown('[data-action="reconnect-terminal"]'), 'disconnected terminal keeps reconnect accessible')
+    assert execute("return document.querySelector('.nav-item[data-view=dashboard]')?.disabled===false && document.querySelector('.nav-item[data-view=files]')?.disabled===false;"), 'Exiting a shell must not disable tools on its still-authenticated SSH connection'
     compact_terminal_geometry()
     click('[data-action="reconnect-terminal"]')
     wait(lambda: execute("return document.querySelector('.terminal-layer')?.textContent.includes('fixture-terminal-ready');"), 'reconnected SSH terminal')
     assert not execute("return document.querySelector('.terminal-layer')?.textContent.includes('CI_REMOTE_λ_漢字');"), 'Reconnect must not replay terminal input'
     remote_input('exit\n')
     wait(lambda: shown('[data-action="reconnect-terminal"]'), 'fixture terminal cleanup')
+    assert execute("return document.querySelector('.nav-item[data-view=dashboard]')?.disabled===false;"), 'SSH tools must remain available immediately after the last terminal exits'
     request('POST', f'/session/{session}/window/rect', {'width':1400, 'height':900})
     wait(lambda: execute('return Math.abs(window.innerWidth-1400)<=16;'), 'desktop viewport restored after narrow terminal checks')
     click('.nav-item[data-view="dashboard"]')
