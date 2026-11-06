@@ -49,3 +49,7 @@ jobs:
         run: make test-openssh
         env:
           TERNWAY_SSH_TEST_PYTHON: python
+      - name: Test managed SSH overview and files
+        run: make test-managed-tools
+        env:
+          TERNWAY_SSH_TEST_PYTHON: python

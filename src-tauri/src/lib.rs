@@ -4,6 +4,7 @@ mod appimage;
 mod config;
 mod child_process;
 mod credentials;
+mod cron_support;
 mod secret_provider;
 mod vault_lock;
 mod disk;

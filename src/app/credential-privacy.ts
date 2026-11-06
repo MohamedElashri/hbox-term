@@ -13,7 +13,10 @@ export async function installCredentialPrivacy(): Promise<void> {
     clearClipboardHistory();
     if (state.masterPasswordWaiter) finishMasterPasswordPrompt(null);
     if (state.finishSshPasswordWaiter) finishSshPasswordPrompt(null);
-    if (["server", "change-password", "reset-credentials", "user-password"].includes(state.modal ?? "")) state.modal = null;
+    // Connection drafts retain their host/route/notes; their secret inputs were
+    // cleared above. Opening another window or a password manager must not erase
+    // the rest of an unsaved connection.
+    if (["change-password", "reset-credentials", "user-password"].includes(state.modal ?? "")) state.modal = null;
     render();
   });
   // Also protects systems whose screen locker does not publish a native session signal.

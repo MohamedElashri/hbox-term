@@ -16,6 +16,39 @@ PASSWORD = " fixture SSH password "
 KEY = paramiko.RSAKey.generate(2048)
 STATE = Path(sys.argv[2]) if len(sys.argv) > 2 else None
 
+# Representative Linux output over a real authenticated SSH transport. No remote
+# shell commands are executed by this disposable fixture.
+OVERVIEW = b"""__TERNWAY_OVERVIEW_V1__profile
+hostname\tfixture-linux
+kernel\tfixture-kernel
+__TERNWAY_OVERVIEW_V1__capabilities
+distro\tUbuntu fixture
+architecture\tx86_64
+root\tfalse
+command\tss
+command\tcrontab
+packageManager\tapt-get
+__TERNWAY_OVERVIEW_V1__cpu
+before\t10 0 10 80 0 0 0 0
+after\t20 0 20 160 0 0 0 0
+cores\t2
+model\tFixture CPU
+__TERNWAY_OVERVIEW_V1__memory
+MemTotal: 1024000 kB
+MemAvailable: 256000 kB
+SwapTotal: 0 kB
+SwapFree: 0 kB
+__TERNWAY_OVERVIEW_V1__storage
+Filesystem 1024-blocks Used Available Capacity Mounted on
+tmpfs 1024 32 992 4% /run
+/dev/root 1000000 250000 750000 25% /
+__TERNWAY_OVERVIEW_V1__uptime
+3600
+0.1 0.2 0.3 1/100 1
+__TERNWAY_OVERVIEW_V1__network
+2: eth0 inet 192.0.2.10/24 scope global eth0
+"""
+
 
 class SftpServer(paramiko.SFTPServer):
     def _send_server_version(self):
@@ -28,6 +61,12 @@ class SftpServer(paramiko.SFTPServer):
         message.add_string("1")
         self._send_packet(2, message)
         return 3
+
+
+class SlowUploadHandle(paramiko.SFTPHandle):
+    def write(self, offset, data):
+        time.sleep(0.02)
+        return super().write(offset, data)
 
 
 class Files(paramiko.SFTPServerInterface):
@@ -65,7 +104,7 @@ class Files(paramiko.SFTPServerInterface):
         def opened():
             fd = os.open(self.local(path), flags, attr.st_mode or 0o600)
             file = os.fdopen(fd, "r+b" if flags & os.O_RDWR else "wb" if flags & os.O_WRONLY else "rb")
-            handle = paramiko.SFTPHandle(flags)
+            handle = SlowUploadHandle(flags) if MODE == 'features' and 'fixture-upload.bin' in path else paramiko.SFTPHandle(flags)
             handle.readfile = file
             handle.writefile = file
             return handle
@@ -124,7 +163,7 @@ class Server(paramiko.ServerInterface):
         return "keyboard-interactive" if MODE == "keyboard" else "password,keyboard-interactive"
 
     def check_auth_password(self, username, password):
-        if MODE == "password" and username == "qa" and password == PASSWORD:
+        if MODE in {"password", "features"} and username == "qa" and password == PASSWORD:
             return paramiko.AUTH_SUCCESSFUL
         return paramiko.AUTH_FAILED
 
@@ -141,6 +180,26 @@ class Server(paramiko.ServerInterface):
 
     def check_channel_exec_request(self, channel, command):
         def reply():
+            if MODE == "features":
+                script = b""
+                if command.startswith(b"LC_ALL=C sh -s"):
+                    while chunk := channel.recv(65536):
+                        script += chunk
+                        if len(script) > 262144:
+                            channel.close()
+                            return
+                if b"__TERNWAY_OVERVIEW_V1__" in script:
+                    channel.sendall(OVERVIEW)
+                else:
+                    channel.send_stderr(b"Unsupported command in isolated feature fixture\n")
+                    channel.send_exit_status(1)
+                    channel.close()
+                    return
+                channel.send_exit_status(0)
+                channel.shutdown_write()
+                time.sleep(0.05)
+                channel.close()
+                return
             if command == b"fixture-wait":
                 channel.send(b"fixture-ready\n")
                 return
