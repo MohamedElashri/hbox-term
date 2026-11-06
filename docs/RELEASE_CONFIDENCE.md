@@ -20,6 +20,36 @@ Local macOS verification uses the isolated `dev.elashri.ternway.qa` app and nati
 controls. The official manual tauri-driver stack has no WKWebView driver on macOS;
 Linux automation does not stand in for native macOS input/rendering checks.
 
+The release regression sweep also covers secret clearing without losing unsaved connection
+details, password rejection/retry, generated-host fingerprint review, the root-filesystem
+overview, SFTP file editing/rename/permissions/delete, a paused and resumed binary upload,
+queued download byte equality, and checksum-previewed backup restoration with a rollback
+copy. These run through the real native app and a disposable SSH/SFTP server. Its Linux
+overview is representative fixture output, not a live system-administration environment.
+`make test-managed-tools` exercises the managed SSH/SFTP path on both CI platforms.
+Debug QA processes set `TERNWAY_QA_KNOWN_HOSTS` to an isolated absolute file; production
+builds ignore that override and use the user's OpenSSH trust file. QA never changes `HOME`.
+
+Cron regressions check Linux Sunday numbering, day-of-month/day-of-week union, shorthand
+schedules, environment declarations and exact shell-command whitespace. Next-run values are
+UTC-based estimates; the server's cron timezone and daemon-specific extensions may differ.
+
+## Live SSH-agent approval
+
+The macOS QA app successfully used the 1Password agent for a test signature and then logged
+into the explicitly authorized test server with the managed SSH client. A read-only overview
+loaded, and the test connection was disconnected. No password-manager secret fields or private
+keys were read. The previously missing approval was diagnosed in 1Password's own log:
+it queued a background prompt, then timed out after 60 seconds. Opening the 1Password
+menu-bar icon and approving **SSH request waiting** completed signing. Cached approvals can
+make subsequent requests succeed without another prompt. Activity recording was restored to
+off after the check, and no diagnostic report was sent anywhere.
+
+See [1Password's background-prompt behavior](https://www.1password.dev/ssh/agent/compatibility#using-git-autofetch).
+Ternway's connecting view now points SSH-agent users to the agent's menu-bar/tray icon when
+an approval dialog does not appear. This functional check used an ad-hoc QA bundle and does
+not replace production signing or notarization verification.
+
 Primary tooling references: [Tauri WebDriver](https://v2.tauri.app/develop/tests/webdriver/),
 [CI setup](https://v2.tauri.app/develop/tests/webdriver/ci/),
 [Weston](https://mvlad.pages.freedesktop.org/weston/toc/running-weston.html).

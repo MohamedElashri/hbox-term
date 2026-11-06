@@ -7,14 +7,12 @@ use crate::ssh::{
 };
 use crate::storage::Store;
 use chrono::Utc;
-use cron::Schedule;
 use serde_json::Value;
 use ssh2::{ErrorCode, FileStat, RenameFlags};
 use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::{Read, Seek, Write};
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 use std::sync::{atomic::AtomicBool, Arc};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
@@ -30,6 +28,9 @@ const RUNTIME_PROBE_TIMEOUT: Duration = Duration::from_secs(8);
 const OVERVIEW_SECTION_MARKER: &str = "__TERNWAY_OVERVIEW_V1__";
 const DOCKER_ITEMS_MARKER: &str = "__TERNWAY_DOCKER_ITEMS_V1__";
 const DOCKER_STATS_MARKER: &str = "__TERNWAY_DOCKER_STATS_V1__";
+#[cfg(test)]
+#[path = "provider_regression_tests.rs"]
+mod release_regressions;
 const OVERVIEW_SCRIPT: &str = r#"
 marker() { printf '\n__TERNWAY_OVERVIEW_V1__%s\n' "$1"; }
 
@@ -420,23 +421,13 @@ pub fn cron_jobs(
             let Some((source, cron_line)) = line.split_once('\t') else {
                 continue;
             };
-            let trimmed = cron_line.trim();
-            if trimmed.is_empty()
-                || trimmed.starts_with('#')
-                || trimmed.contains('=') && !trimmed.contains(' ')
-            {
-                continue;
-            }
-            let fields = trimmed.split_whitespace().collect::<Vec<_>>();
-            if fields.len() < 7 {
-                continue;
-            }
-            let schedule = fields[..5].join(" ");
+            let Some(entry) = crate::cron_support::entry(cron_line, true) else { continue };
+            let schedule = entry.schedule;
             jobs.push(CronJob {
                 id: format!("system:{source}:{index}"),
                 source: source.to_string(),
-                user: fields[5].to_string(),
-                command: fields[6..].join(" "),
+                user: entry.user.unwrap_or_default().to_string(),
+                command: entry.command.to_string(),
                 enabled: true,
                 human_schedule: human_cron(&schedule),
                 next_run: next_cron_run(&schedule),
@@ -455,6 +446,9 @@ pub fn save_cron_job(
     operation_id: Option<&str>,
 ) -> Result<(), String> {
     validate_cron(&input.schedule)?;
+    if input.id.as_ref().is_some_and(|id| !id.starts_with("user:") || !id.bytes().all(|c| c.is_ascii_alphanumeric() || b":_-".contains(&c))) {
+        return Err("Invalid cron job identifier".into());
+    }
     if input.command.trim().is_empty()
         || input.command.contains('\n')
         || input.command.contains('\r')
@@ -501,9 +495,9 @@ pub fn cron_action(
                     continue;
                 }
                 let raw = line
-                    .trim()
+                    .trim_start()
                     .strip_prefix("# TERNWAY_DISABLED ")
-                    .unwrap_or(line.trim());
+                    .unwrap_or(line.trim_start());
                 result.push(if action == "disable" {
                     format!("# TERNWAY_DISABLED {raw}")
                 } else {
@@ -926,29 +920,16 @@ fn parse_user_crontab(text: &str, user: &str) -> Vec<CronJob> {
     text.lines()
         .enumerate()
         .filter_map(|(index, original)| {
-            let trimmed = original.trim();
+            let trimmed = original.trim_start();
             let (enabled, line) = if let Some(line) = trimmed.strip_prefix("# TERNWAY_DISABLED ")
             {
                 (false, line)
             } else {
                 (true, trimmed)
             };
-            if line.is_empty() || line.starts_with('#') || line.contains('=') && !line.contains(' ')
-            {
-                return None;
-            }
-            let fields = line.split_whitespace().collect::<Vec<_>>();
-            if fields.len() < 6 {
-                return None;
-            }
-            let schedule = fields[..5].join(" ");
-            let command = fields[5..]
-                .join(" ")
-                .split(" # ternway:")
-                .next()
-                .unwrap_or_default()
-                .trim()
-                .to_string();
+            let entry = crate::cron_support::entry(line, false)?;
+            let schedule = entry.schedule;
+            let command = crate::cron_support::metadata(entry.command).0.to_string();
             Some(CronJob {
                 id: cron_line_id(original, index),
                 source: "User crontab".to_string(),
@@ -965,14 +946,12 @@ fn parse_user_crontab(text: &str, user: &str) -> Vec<CronJob> {
 }
 
 fn cron_line_id(line: &str, index: usize) -> String {
-    line.rsplit_once(" # ternway:")
-        .map(|(_, id)| id.trim().to_string())
-        .filter(|id| id.starts_with("user:"))
+    crate::cron_support::metadata(line).1.map(str::to_string)
         .unwrap_or_else(|| format!("user:line:{index}"))
 }
 
 fn cron_job_line(id: &str, schedule: &str, command: &str, enabled: bool) -> String {
-    let line = format!("{} {} # ternway:{}", schedule.trim(), command.trim(), id);
+    let line = format!("{} {} # ternway:{}", schedule.trim(), command, id);
     if enabled {
         line
     } else {
@@ -1009,30 +988,22 @@ fn replace_cron_line(
 }
 
 fn validate_cron(value: &str) -> Result<(), String> {
-    let fields = value.split_whitespace().collect::<Vec<_>>();
-    if fields.len() != 5 {
-        return Err("Cron schedules need exactly five fields".to_string());
-    }
-    Schedule::from_str(&format!("0 {value}"))
-        .map(|_| ())
-        .map_err(|_| "That cron expression is not valid".to_string())
+    crate::cron_support::validate(value)
 }
 
 fn next_cron_run(value: &str) -> Option<String> {
-    Schedule::from_str(&format!("0 {value}"))
-        .ok()?
-        .upcoming(Utc)
-        .next()
-        .map(|time| time.to_rfc3339())
+    crate::cron_support::next_at(value, Utc::now()).map(|time| time.to_rfc3339())
 }
 
 fn human_cron(value: &str) -> String {
     match value.trim() {
         "* * * * *" => "Every minute",
-        "0 * * * *" => "Every hour",
-        "0 0 * * *" => "Every day at midnight",
-        "0 0 * * 0" => "Every Sunday at midnight",
-        "0 0 1 * *" => "On the first day of every month",
+        "0 * * * *" | "@hourly" => "Every hour",
+        "0 0 * * *" | "@daily" | "@midnight" => "Every day at midnight",
+        "0 0 * * 0" | "@weekly" => "Every Sunday at midnight",
+        "0 0 1 * *" | "@monthly" => "On the first day of every month",
+        "@reboot" => "When the server starts",
+        "@yearly" | "@annually" => "On the first day of every year",
         other if other.starts_with("*/") && other.ends_with(" * * * *") => {
             "At a regular minute interval"
         }
@@ -1831,7 +1802,7 @@ fn parse_cpu_utilization(before: &str, after: &str) -> f64 {
 
 fn parse_memory(value: &str) -> MemoryStats {
     let mut total = 0;
-    let mut available = 0;
+    let mut available = None;
     let mut free = 0;
     let mut buffers = 0;
     let mut cached = 0;
@@ -1843,11 +1814,11 @@ fn parse_memory(value: &str) -> MemoryStats {
         let amount = fields
             .next()
             .and_then(|value| value.parse::<u64>().ok())
-            .unwrap_or(0)
-            * 1024;
+            .and_then(|value| value.checked_mul(1024))
+            .unwrap_or(0);
         match label {
             "MemTotal:" => total = amount,
-            "MemAvailable:" => available = amount,
+            "MemAvailable:" => available = Some(amount),
             "MemFree:" => free = amount,
             "Buffers:" => buffers = amount,
             "Cached:" => cached = amount,
@@ -1856,14 +1827,12 @@ fn parse_memory(value: &str) -> MemoryStats {
             _ => {}
         }
     }
-    if available == 0 {
-        available = free
+    let available = available.unwrap_or_else(|| free
             .saturating_add(buffers)
             .saturating_add(cached)
             .saturating_add(reclaimable)
             .saturating_sub(shared)
-            .min(total);
-    }
+            .min(total)).min(total);
     let used = total.saturating_sub(available);
     MemoryStats {
         used_bytes: used,
@@ -1886,8 +1855,8 @@ fn parse_swap(value: &str) -> SwapStats {
         let amount = fields
             .next()
             .and_then(|value| value.parse::<u64>().ok())
-            .unwrap_or(0)
-            * 1024;
+            .and_then(|value| value.checked_mul(1024))
+            .unwrap_or(0);
         match label {
             "SwapTotal:" => total = amount,
             "SwapFree:" => free = amount,
@@ -1907,7 +1876,7 @@ fn parse_swap(value: &str) -> SwapStats {
 }
 
 fn parse_disks(value: &str) -> Vec<DiskUsage> {
-    value
+    let mut disks: Vec<_> = value
         .lines()
         .skip(1)
         .filter_map(|line| {
@@ -1915,9 +1884,9 @@ fn parse_disks(value: &str) -> Vec<DiskUsage> {
             if fields.len() < 6 {
                 return None;
             }
-            let total = fields[1].parse::<u64>().ok()? * 1024;
-            let used = fields[2].parse::<u64>().ok()? * 1024;
-            let available = fields[3].parse::<u64>().ok()? * 1024;
+            let total = fields[1].parse::<u64>().ok()?.checked_mul(1024)?;
+            let used = fields[2].parse::<u64>().ok()?.checked_mul(1024)?;
+            let available = fields[3].parse::<u64>().ok()?.checked_mul(1024)?;
             let percent = fields[4].trim_end_matches('%').parse().unwrap_or(0.0);
             Some(DiskUsage {
                 filesystem: fields[0].to_string(),
@@ -1929,8 +1898,10 @@ fn parse_disks(value: &str) -> Vec<DiskUsage> {
             })
         })
         .filter(|disk: &DiskUsage| disk.total_bytes > 0)
-        .take(20)
-        .collect()
+        .collect();
+    disks.sort_by_key(|disk| disk.mount != "/");
+    disks.truncate(20);
+    disks
 }
 
 fn parse_interfaces(value: &str) -> Vec<NetworkInterface> {
@@ -1967,7 +1938,7 @@ fn parse_ss_ports(value: &str) -> Vec<PortInfo> {
         .lines()
         .filter_map(|line| {
             let fields: Vec<&str> = line.split_whitespace().collect();
-            if fields.len() < 5 {
+            if fields.len() < 6 {
                 return None;
             }
             let process = fields
@@ -1986,8 +1957,8 @@ fn parse_ss_ports(value: &str) -> Vec<PortInfo> {
             Some(PortInfo {
                 protocol: fields[0].to_string(),
                 state: fields[1].to_string(),
-                local_address: fields[4.min(fields.len() - 1)].to_string(),
-                remote_address: fields[5.min(fields.len() - 1)].to_string(),
+                local_address: fields[4].to_string(),
+                remote_address: fields[5].to_string(),
                 process,
                 pid,
             })
@@ -2737,6 +2708,14 @@ pub fn write_file(
     })
 }
 
+fn permission_mode(value: &str) -> Result<u32, String> {
+    let value = value.trim();
+    if value.is_empty() || value.len() > 4 || !value.bytes().all(|c| (b'0'..=b'7').contains(&c)) {
+        return Err("Permission mode must be octal, from 0000 to 7777".into());
+    }
+    u32::from_str_radix(value, 8).map_err(|_| "Invalid permission mode".into())
+}
+
 pub fn file_action(
     store: &Store,
     server_id: &str,
@@ -2774,16 +2753,16 @@ pub fn file_action(
                 let mode = mode
                     .as_deref()
                     .ok_or_else(|| "Enter a permission mode such as 644".to_string())?;
-                let mode = u32::from_str_radix(mode.trim().trim_start_matches('0'), 8)
-                    .map_err(|_| "Permission mode must be octal, such as 644 or 755".to_string())?;
-                let stat = sftp
-                    .stat(&path)
-                    .map_err(|error| format!("Could not read file permissions: {error}"))?;
+                let mode = permission_mode(mode)?;
                 sftp.setstat(
                     &path,
                     FileStat {
+                        size: None,
+                        uid: None,
+                        gid: None,
                         perm: Some(mode),
-                        ..stat
+                        atime: None,
+                        mtime: None,
                     },
                 )
                 .map_err(|error| format!("Could not change permissions: {error}"))

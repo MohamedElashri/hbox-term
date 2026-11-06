@@ -5,7 +5,7 @@ DEBUG_BINARY := src-tauri/target/debug/ternway
 RELEASE_BINARY := src-tauri/target/release/ternway
 
 .DEFAULT_GOAL := help
-.PHONY: help install dev build build-debug run run-release check test test-ts test-rust test-ssh-password test-openssh lint fmt fmt-check bench clean qa-macos test-soak
+.PHONY: help install dev build build-debug run run-release check test test-ts test-rust test-ssh-password test-openssh test-managed-tools lint fmt fmt-check bench clean qa-macos test-soak
 
 help: ## List the targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F ':.*## ' '{printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -54,6 +54,11 @@ test-ssh-password: ## Real SSH password and keyboard-interactive fixture (see DE
 
 test-openssh: ## Native OpenSSH config, jump/proxy, authentication and PTY lifecycle fixtures
 	TERNWAY_SSH_TEST_PYTHON="$${TERNWAY_SSH_TEST_PYTHON:-python3}" cargo test $(CARGO_MANIFEST) --lib loopback_openssh -- --ignored
+
+test-managed-tools: ## Managed SSH overview and SFTP against a disposable password fixture
+	@task_trust_dir="$$(mktemp -d /tmp/ternway-managed-qa.XXXXXX)"; \
+	trap 'rm -rf "$$task_trust_dir"' EXIT; \
+	TERNWAY_QA_KNOWN_HOSTS="$$task_trust_dir/known_hosts" TERNWAY_SSH_TEST_PYTHON="$${TERNWAY_SSH_TEST_PYTHON:-python3}" cargo test $(CARGO_MANIFEST) --lib managed_tools_loopback -- --ignored
 
 test-soak: ## Repeated real PTY lifecycle, job cleanup, Unicode/output and resize checks
 	cargo test $(CARGO_MANIFEST) --lib repeated_terminal_lifecycle_soak -- --ignored --nocapture --test-threads=1

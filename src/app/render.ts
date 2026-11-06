@@ -1,6 +1,7 @@
 import { collapsedGroups } from "./connection-groups";
 import { unavailableToolReason } from "./navigation";
 import { icon } from "../icons";
+import { AGENT_APPROVAL_HINT } from "./connection-lifecycle";
 import type { ServerProfile } from "../types";
 import { escapeHtml } from "./format";
 import { profileRouteLabel, renderAppDialog, renderModal } from "./modals";
@@ -314,7 +315,7 @@ export function renderViewLoading(): string {
   const firstConnection = !activeServerIsConnected();
   const title = state.activeOperation?.label ?? (firstConnection ? "Establishing a secure connection…" : "Loading this view…");
   const detail = firstConnection
-    ? `Connecting to ${server?.host ?? "the server"} and reading its overview. SSH can take a moment on the first connection.`
+    ? `Connecting to ${server?.host ?? "the server"} and reading its overview. ${server?.authMethod === "sshAgent" ? AGENT_APPROVAL_HINT : "SSH can take a moment on the first connection."}`
     : `Reading fresh information from ${server?.host ?? "the server"}. You can switch views or cancel at any time.`;
   return `<div class="view-loading" role="status" aria-live="polite" aria-busy="true"><div class="view-loading-card"><div class="view-loading-mark"><div class="spinner"></div>${icon("logo")}</div><div><strong>${escapeHtml(title)}</strong><p>${escapeHtml(detail)}</p></div></div><div class="view-loading-skeleton" aria-hidden="true"><span></span><span></span><span></span><span></span></div></div>`;
 }

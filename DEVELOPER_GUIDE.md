@@ -128,6 +128,16 @@ With the same fixture virtualenv as the password tests, run:
 TERNWAY_SSH_TEST_PYTHON=/tmp/ternway-ssh-tests/bin/python make test-openssh
 ```
 
+Run the managed password, overview and SFTP file regression fixture with:
+
+```sh
+TERNWAY_SSH_TEST_PYTHON=/tmp/ternway-ssh-tests/bin/python make test-managed-tools
+```
+
+That target also isolates host trust, so generated fixture keys are never added to your
+`~/.ssh/known_hosts`. The native GUI CI uses the same fixture and checks pause/resume,
+binary transfers, credential privacy and backup restoration through real app IPC.
+
 This launches the real OpenSSH client through the application's PTY backend, with generated
 keys and isolated host trust. It never reads user SSH config or uses a real account. Both
 macOS and Linux CI run it after the managed password authentication fixture. Checks run on

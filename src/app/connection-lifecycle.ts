@@ -1,5 +1,7 @@
 export type ConnectionPhase = "dormant" | "launching" | "authenticating" | "interactive" | "ready" | "disconnected" | "failed" | "cancelled";
 
+export const AGENT_APPROVAL_HINT = "Your SSH agent may be waiting for approval. If no dialog appears, check its menu-bar or tray icon for a waiting request.";
+
 export const phaseLabels: Record<ConnectionPhase, string> = {
   dormant: "Saved layout · session not started", launching: "Opening session…", authenticating: "Authenticate in terminal…",
   interactive: "OpenSSH running · authentication unverified", ready: "Connected",

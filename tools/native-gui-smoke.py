@@ -5,6 +5,7 @@ import http.client
 import json
 import os
 from pathlib import Path
+import select
 import socket
 import signal
 import subprocess
@@ -23,6 +24,7 @@ artifacts.mkdir()
 for name in ["config", "data", "cache", "shell"]:
     (root / name).mkdir(mode=0o700)
 os.environ.update({"XDG_CONFIG_HOME": str(root / "config"), "XDG_DATA_HOME": str(root / "data"), "XDG_CACHE_HOME": str(root / "cache"), "SHELL": "/bin/sh", "ENV": "/dev/null", "BASH_ENV": "/dev/null", "ZDOTDIR": str(root / "shell"), "TAURI_WEBVIEW_AUTOMATION": "true"})
+os.environ['TERNWAY_QA_KNOWN_HOSTS'] = str(root / 'known_hosts')
 config = root / "config" / "ternway"
 config.mkdir()
 (config / "config").write_text("shell-integration = none\nwindow-save-state = always\nsave-scrollback = false\nclipboard-history = false\n")
@@ -30,6 +32,8 @@ log = (artifacts / "driver.log").open("w")
 driver = subprocess.Popen(["tauri-driver", "--native-driver", "/usr/bin/WebKitWebDriver"], stdout=log, stderr=log, start_new_session=True)
 base = "http://127.0.0.1:4444"
 session = None
+fixture = None
+fixture_log = None
 checks = []
 
 def request(method, path, body=None):
@@ -136,6 +140,11 @@ try:
     type_into('[data-form="server"] [name="username"]', 'qa')
     click('[data-managed-route] > summary')
     type_into('[data-form="server"] [name="port"]', str(port))
+    type_into('[data-form="server"] [name="password"]', 'disposable privacy fixture')
+    invoke('lock_credentials')
+    wait(lambda: execute("return !!document.querySelector('[data-form=server]') && document.querySelector('[data-form=server] [name=password]').value==='';"), 'credential lock clears secrets without losing the draft')
+    assert execute("return document.querySelector('[data-form=server] [name=name]').value==='CI save only' && document.querySelector('[data-form=server] [name=host]').value==='127.0.0.1';")
+    check('credential locking clears password fields and retains the unsaved connection')
     click('[data-form="server"] button[type="submit"]')
     wait(lambda: not shown('[data-form="server"]'), "save-only connection")
     assert len(invoke("get_state")["servers"]) == 1
@@ -176,6 +185,81 @@ try:
     assert archive["version"] == 1 and archive["encryptedVault"] is None
     assert len(archive["tables"]["servers"]) == 2
     check("library export uses real IPC and excludes saved secrets by default")
+
+    fixture_root = root / 'ssh-fixture'
+    fixture_root.mkdir(mode=0o700)
+    fixture_log = (artifacts / 'ssh-fixture.log').open('w')
+    fixture = subprocess.Popen([sys.executable, 'tests/fixtures/ssh_password_server.py', 'features', str(fixture_root)], stdout=subprocess.PIPE, stderr=fixture_log, text=True)
+    assert select.select([fixture.stdout], [], [], 15)[0], 'SSH fixture startup timed out'
+    fixture_port = int(fixture.stdout.readline().strip())
+    click('[data-action="add-server"]')
+    type_into('[data-form="server"] [name="name"]', 'CI fixture SSH')
+    type_into('[data-form="server"] [name="host"]', '127.0.0.1')
+    type_into('[data-form="server"] [name="username"]', 'qa')
+    click('[data-managed-route] > summary')
+    type_into('[data-form="server"] [name="port"]', str(fixture_port))
+    click('[data-action="save-and-test"]')
+    wait(lambda: shown('[data-action="trust-host-key"]'), 'fixture host-key review')
+    import hashlib
+    host_key = (fixture_root / 'known_hosts').read_text().split()[2]
+    fingerprint = 'SHA256:' + base64.b64encode(hashlib.sha256(base64.b64decode(host_key)).digest()).decode().rstrip('=')
+    assert execute('return document.body.textContent.includes(arguments[0]);', fingerprint), 'Trust prompt must identify the generated fixture host key'
+    click('[data-action="trust-host-key"]')
+    wait(lambda: shown('[data-form="ssh-password"]'), 'password login prompt')
+    type_into('[data-form="ssh-password"] [name="password"]', 'incorrect fixture password')
+    click('[data-form="ssh-password"] button[type="submit"]')
+    wait(lambda: shown('[data-action="connect"]'), 'rejected password leaves a retryable connection')
+    click('[data-action="connect"]')
+    wait(lambda: shown('[data-form="ssh-password"]'), 'password prompt after rejected credentials')
+    type_into('[data-form="ssh-password"] [name="password"]', ' fixture SSH password ')
+    click('[data-form="ssh-password"] button[type="submit"]')
+    wait(lambda: execute("return document.body.textContent.includes('fixture-linux');"), 'authenticated overview')
+    system_disk = execute("return Array.from(document.querySelectorAll('.stat-card')).find(el=>el.textContent.includes('System disk'))?.textContent;")
+    assert '25%' in system_disk and 'free on /' in system_disk and '/run' not in system_disk, system_disk
+    check('real SSH host-key review, rejected-password recovery and root-filesystem overview')
+    server = next(row for row in invoke('get_state')['servers'] if row['name'] == 'CI fixture SSH')
+    server_id = server['id']
+    invoke('remote_file_action', serverId=server_id, action='mkdir', path='/qa-files', target=None, mode=None)
+    content = 'Real SFTP fixture: λ 漢字\n'
+    invoke('write_remote_file', serverId=server_id, path='/qa-files/example.txt', content=content)
+    assert invoke('read_remote_file', serverId=server_id, path='/qa-files/example.txt') == content
+    invoke('remote_file_action', serverId=server_id, action='chmod', path='/qa-files/example.txt', target=None, mode='000')
+    assert (fixture_root / 'files/qa-files/example.txt').stat().st_mode & 0o777 == 0
+    invoke('remote_file_action', serverId=server_id, action='chmod', path='/qa-files/example.txt', target=None, mode='0644')
+    invoke('remote_file_action', serverId=server_id, action='rename', path='/qa-files/example.txt', target='renamed.txt', mode=None)
+    listing = invoke('list_remote_files', serverId=server_id, request={'path':'/qa-files','showHidden':False,'offset':0,'limit':100})
+    assert any(row['name']=='renamed.txt' for row in listing['items'])
+    invoke('remote_file_action', serverId=server_id, action='delete', path='/qa-files', target=None, mode=None)
+    assert not (fixture_root / 'files/qa-files').exists()
+    check('real SFTP create, UTF-8 edit, rename, listing and recursive delete stay within fixture files')
+    upload = root / 'fixture-upload.bin'
+    upload.write_bytes(bytes(range(256)) * 32768)
+    job = invoke('enqueue_transfer', serverId=server_id, direction='upload', localPath=str(upload), remotePath='/')
+    click('[data-action="credential-settings"]')
+    click('[data-action="transfer-queue"]')
+    click('[data-action="run-transfer-queue"]')
+    wait(lambda: any(p.stat().st_size > 0 for p in (fixture_root / 'files').glob('.fixture-upload.bin.*.part')), 'partial upload before pause')
+    click('[data-action="cancel-transfer"]')
+    wait(lambda: any(row['id']==job['id'] and row['status']=='paused' for row in invoke('list_transfer_jobs')), 'pause reaches the running transfer')
+    assert not (fixture_root / 'files' / upload.name).exists(), 'Paused upload must not publish a partial destination'
+    click('[data-job-action="retry"]')
+    wait(lambda: any(row['id']==job['id'] and row['status']=='complete' for row in invoke('list_transfer_jobs')), 'resume verifies the checkpoint and finishes', timeout=60)
+    assert (fixture_root / 'files' / upload.name).read_bytes() == upload.read_bytes()
+    downloaded = root / 'fixture-downloaded.bin'
+    job = invoke('enqueue_transfer', serverId=server_id, direction='download', localPath=str(downloaded), remotePath='/' + upload.name)
+    click('[data-action="run-transfer-queue"]')
+    wait(lambda: any(row['id']==job['id'] and row['status']=='complete' for row in invoke('list_transfer_jobs')), 'queued download finishes', timeout=60)
+    assert downloaded.read_bytes() == upload.read_bytes()
+    assert all(job['status']=='complete' for job in invoke('list_transfer_jobs'))
+    check('native Pause and Retry controls resume real SFTP and commit identical binary upload/download data')
+    click('[data-action="close-modal"]')
+    click('[data-action="disconnect"]')
+    click('[data-action="open-local"]')
+    preview = invoke('preview_library_backup', path=str(backup))
+    assert preview['connections'] == 2 and not preview['includesSecrets']
+    recovery = invoke('restore_library_backup', path=str(backup), checksum=preview['checksum'])
+    assert Path(recovery).exists() and len(invoke('get_state')['servers']) == 2
+    check('library restore uses checksum preview and retains an automatic rollback backup')
 
     click('[data-action="workspace-library"]')
     click('[data-action="save-workspace-layout"]')
@@ -223,6 +307,15 @@ finally:
         except Exception as error:
             print(f"Cleanup observation: {error}", file=sys.stderr)
     trap.close()
+    if fixture:
+        fixture.terminate()
+        try:
+            fixture.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            fixture.kill()
+            fixture.wait()
+    if fixture_log:
+        fixture_log.close()
     try:
         os.killpg(driver.pid, signal.SIGTERM)
     except ProcessLookupError:
