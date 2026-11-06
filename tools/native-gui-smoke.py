@@ -156,6 +156,28 @@ try:
         request("POST", f"/session/{session}/window/rect", {"width": width, "height": height})
     check("window resizing keeps the terminal alive")
 
+    click('[data-action="new-terminal"]')
+    tab_ids = wait(lambda: execute("const tabs=Array.from(document.querySelectorAll('.term-tab')); return tabs.length===2 && tabs.map(el=>el.dataset.tabGroup);"), 'second local terminal tab')
+    drag_points = execute("""
+      const tab=document.querySelector('.term-tab').getBoundingClientRect();
+      const surface=document.querySelector('[data-terminal-surface]').getBoundingClientRect();
+      return {x:Math.round(tab.left+30), y:Math.round(tab.top+tab.height/2),
+        endX:Math.round(surface.right-30), endY:Math.round(surface.top+60)};
+    """)
+    # The xterm overlay is outside the app root. Pointer capture must retain
+    # the release when a tab is dragged over it, just as outside the window.
+    request('POST', f'/session/{session}/actions', {'actions':[{'type':'pointer', 'id':'tab-drag', 'parameters':{'pointerType':'mouse'}, 'actions':[
+        {'type':'pointerMove', 'duration':0, 'origin':'viewport', 'x':drag_points['x'], 'y':drag_points['y']},
+        {'type':'pointerDown', 'button':0},
+        {'type':'pointerMove', 'duration':250, 'origin':'viewport', 'x':drag_points['endX'], 'y':drag_points['endY']},
+        {'type':'pointerUp', 'button':0},
+    ]}]})
+    wait(lambda: execute("return Array.from(document.querySelectorAll('.term-tab')).map(el=>el.dataset.tabGroup).join(',')===arguments[0];", ','.join(reversed(tab_ids))), 'terminal drag completes over the terminal overlay')
+    request('DELETE', f'/session/{session}/actions')
+    click(f'.term-tab[data-tab-group="{tab_ids[0]}"]')
+    wait(lambda: execute("return document.querySelector('.term-tab.active')?.dataset.tabGroup===arguments[0] && !document.querySelector('.term-tab.dragging,.term-tab.drop-before,.term-tab.drop-after');", tab_ids[0]), 'next tab click remains responsive')
+    check('terminal tabs finish drag over the terminal overlay and accept the next ordinary click')
+
     click('[data-action="credential-settings"]')
     sections = execute("return Array.from(document.querySelectorAll('.settings-nav button')).map(el=>el.textContent.trim());")
     assert sections[-1] == "About", sections

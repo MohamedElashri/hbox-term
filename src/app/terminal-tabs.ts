@@ -1,14 +1,15 @@
 // Mouse interactions of the terminal tab strip (rendered by renderTabStrip): drag to reorder with
 // pointer events (HTML drag and drop competes with the webview's file drop handling), middle
 // click to close, double click to rename.
-import { closeTerminalGroup, moveTab, renameTab } from "./terminal";
+interface TabActions {
+  closeTerminalGroup: (groupId: string) => Promise<void>;
+  moveTab: (groupId: string, to: { before: string }) => void;
+  renameTab: (groupId: string) => Promise<void>;
+}
 
 const DRAG_THRESHOLD = 5;
 
-interface Drag { groupId: string; pointerId: number; startX: number; dragging: boolean }
-
-let drag: Drag | null = null;
-let suppressClick = false;
+interface Drag { groupId: string; pointerId: number; tab: HTMLElement; startX: number; dragging: boolean }
 
 const tabOf = (target: EventTarget | null): HTMLElement | null =>
   (target as HTMLElement | null)?.closest?.<HTMLElement>(".term-tab[data-tab-group]") ?? null;
@@ -25,16 +26,40 @@ function dropTarget(root: HTMLElement, x: number): { before: HTMLElement | null;
   return { before, tabs };
 }
 
-export function installTabStripHandlers(root: HTMLElement): void {
+export function installTabStripHandlers(root: HTMLElement, { closeTerminalGroup, moveTab, renameTab }: TabActions): void {
+  let drag: Drag | null = null;
+  let suppressClick = false;
+  const release = (previous: Drag): void => {
+    for (const target of [root, previous.tab]) {
+      if (target.hasPointerCapture(previous.pointerId)) target.releasePointerCapture(previous.pointerId);
+    }
+  };
+  const cancel = (event: PointerEvent): void => {
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const previous = drag;
+    drag = null;
+    clearIndicators(root);
+    release(previous);
+    if (previous.dragging) root.ownerDocument.defaultView!.setTimeout(() => { suppressClick = false; }, 0);
+  };
   root.addEventListener("pointerdown", (event) => {
     const tab = tabOf(event.target);
-    if (!tab || event.button !== 0 || (event.target as HTMLElement).closest(".term-tab-close")) return;
-    drag = { groupId: tab.dataset.tabGroup!, pointerId: event.pointerId, startX: event.clientX, dragging: false };
+    if (!tab || !event.isPrimary || event.button !== 0 || (event.target as HTMLElement).closest(".term-tab-close")) return;
+    drag = { groupId: tab.dataset.tabGroup!, pointerId: event.pointerId, tab, startX: event.clientX, dragging: false };
+    // Keep ordinary clicks targeted at the tab; capture the very first move even
+    // when a fast drag jumps straight onto the terminal's separate overlay.
+    tab.setPointerCapture(event.pointerId);
   });
   root.addEventListener("pointermove", (event) => {
     if (!drag || event.pointerId !== drag.pointerId) return;
     if (!drag.dragging && Math.abs(event.clientX - drag.startX) < DRAG_THRESHOLD) return;
-    drag.dragging = true;
+    if (!drag.dragging) {
+      drag.dragging = true;
+      suppressClick = true;
+      // The root survives renders and receives pointerup even outside the window.
+      root.setPointerCapture(event.pointerId);
+    }
+    event.preventDefault();
     clearIndicators(root);
     const { before, tabs } = dropTarget(root, event.clientX);
     tabs.find((tab) => tab.dataset.tabGroup === drag?.groupId)?.classList.add("dragging");
@@ -42,16 +67,23 @@ export function installTabStripHandlers(root: HTMLElement): void {
   });
   const finish = (event: PointerEvent) => {
     if (!drag || event.pointerId !== drag.pointerId) return;
-    const { groupId, dragging } = drag;
+    const previous = drag;
+    const { groupId, dragging } = previous;
     drag = null;
     clearIndicators(root);
+    release(previous);
     if (!dragging) return;
-    suppressClick = true;
+    // A release outside the app may not dispatch a click to consume this flag.
+    root.ownerDocument.defaultView!.setTimeout(() => { suppressClick = false; }, 0);
     const before = dropTarget(root, event.clientX).before?.dataset.tabGroup;
     if (before !== groupId) moveTab(groupId, { before: before ?? "" });
   };
   root.addEventListener("pointerup", finish);
-  root.addEventListener("pointercancel", (event) => { if (drag?.pointerId === event.pointerId) { drag = null; clearIndicators(root); } });
+  root.addEventListener("pointercancel", cancel);
+  root.addEventListener("lostpointercapture", (event) => {
+    // Transferring capture from a tab to the stable root also emits this event.
+    if (!root.hasPointerCapture(event.pointerId)) cancel(event);
+  });
   // A drag ends with a click on the tab; it must not also switch tabs.
   root.addEventListener("click", (event) => {
     if (!suppressClick) return;

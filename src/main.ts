@@ -27,7 +27,7 @@ import { appWindow, DEFAULT_INTERFACE_SCALE, quickMode, root, state } from "./ap
 import { togglePalette } from "./app/palette";
 import { loadTerminalConfig } from "./app/terminal-config";
 import { installTabStripHandlers } from "./app/terminal-tabs";
-import { dropOnPane, installDockDivider, paneAt, restoreSession, runTerminalAction, type SavedSession } from "./app/terminal";
+import { closeTerminalGroup, dropOnPane, installDockDivider, moveTab, paneAt, renameTab, restoreSession, runTerminalAction, type SavedSession } from "./app/terminal";
 import { dismissTransferToast, setInterfaceScale, showToast, stepInterfaceScale, syncTransferToast } from "./app/toasts";
 import { refreshSnapshot, selectLocalWorkspace } from "./app/workspace";
 import { saveSession, sessionSavingEnabled } from "./app/session-save";
@@ -109,7 +109,7 @@ async function installEventListeners(): Promise<void> {
   }));
 }
 
-installTabStripHandlers(root);
+installTabStripHandlers(root, { closeTerminalGroup, moveTab, renameTab });
 installDockDivider();
 root.addEventListener("click", (event) => { void handleClick(event); });
 root.addEventListener("toggle", (event) => {

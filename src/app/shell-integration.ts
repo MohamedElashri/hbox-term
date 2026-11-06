@@ -6,8 +6,10 @@ export interface TrackedCommand {
   prompt: IMarker;
   /** Where the command's output starts (OSC 133;C). */
   output?: IMarker;
-  /** The line after the output (OSC 133;D). */
+  outputColumn?: number;
+  /** Where the command's output ends (OSC 133;D), before the next prompt. */
   end?: IMarker;
+  endColumn?: number;
   exitCode?: number;
   startedAt?: number;
   decoration?: IDecoration;
@@ -60,10 +62,12 @@ export class CommandTracker {
       this.commands.push({ prompt: this.term.registerMarker(0) });
     } else if (kind === "C" && last && !last.output) {
       last.output = this.term.registerMarker(0);
+      last.outputColumn = this.term.buffer.active.cursorX;
       last.startedAt = performance.now();
     } else if (kind === "D" && last?.output && !last.end) {
       // A D without a C (an empty command line) is ignored.
       last.end = this.term.registerMarker(0);
+      last.endColumn = this.term.buffer.active.cursorX;
       last.exitCode = Number(args[0]) || 0;
       this.decorate(last);
       this.events.onFinished(last, (performance.now() - (last.startedAt ?? performance.now())) / 1000);
@@ -101,11 +105,14 @@ export class CommandTracker {
     const start = command.output.isDisposed ? 0 : command.output.line;
     const buffer = this.term.buffer.active;
     let text = "";
-    for (let line = start; line < command.end.line; line++) {
+    for (let line = start; line <= command.end.line; line++) {
+      if (line === command.end.line && !command.endColumn) break;
       const row = buffer.getLine(line);
       if (!row) continue;
       // Wrapped rows continue the previous line.
-      text += (line > start && !row.isWrapped ? "\n" : "") + row.translateToString(true);
+      const from = line === start && !command.output.isDisposed ? command.outputColumn ?? 0 : 0;
+      const to = line === command.end.line ? command.endColumn : undefined;
+      text += (line > start && !row.isWrapped ? "\n" : "") + row.translateToString(true, from, to);
     }
     return text.replace(/\n+$/, "");
   }
