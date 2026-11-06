@@ -78,9 +78,19 @@ def element(selector):
     return result["element-6066-11e4-a52e-4f735466cecf"]
 
 def click(selector):
-    target = wait(lambda: element(selector), selector)
-    execute("document.querySelector(arguments[0]).scrollIntoView({block:'center'});", selector)
-    request("POST", f"/session/{session}/element/{target}/click", {})
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        target = wait(lambda: element(selector), selector)
+        execute("document.querySelector(arguments[0]).scrollIntoView({block:'center'});", selector)
+        try:
+            request("POST", f"/session/{session}/element/{target}/click", {})
+            return
+        except RuntimeError as error:
+            # Queue-completion events can replace a button between lookup and
+            # click. A stale reference means the driver never clicked it.
+            if 'stale element reference' not in str(error):
+                raise
+    raise AssertionError(f'Continuously replaced click target: {selector}')
 
 def type_into(selector, text):
     target = element(selector)
