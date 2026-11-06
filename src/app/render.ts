@@ -93,7 +93,7 @@ export function renderShell(): string {
         ? `<section class="content-area content-area-local">${state.errorMessage ? `<div class="local-error">${renderInlineError()}</div>` : ""}${renderTerminal()}</section>`
         : dockShown()
           ? `<section class="content-area content-area-docked">${renderDockLayout()}</section>`
-          : `<section class="content-area">${state.activeServerId ? renderConnectedContent() : state.snapshot.servers.length ? renderEmptyWorkspace() : renderWelcome()}</section>`}
+          : `<section class="content-area${state.activeServerId && state.activeView === "terminal" ? " content-area-terminal" : ""}">${state.activeServerId ? renderConnectedContent() : state.snapshot.servers.length ? renderEmptyWorkspace() : renderWelcome()}</section>`}
     </main>
   </div>${renderOperationBanner()}${state.modal ? renderModal() : ""}${state.appDialogPrompt ? renderAppDialog() : ""}${state.transfer && !state.transfer.done ? renderTransferToast() : ""}${state.appToast ? renderAppToast() : ""}`;
 }
@@ -247,11 +247,9 @@ function renderDockLayout(): string {
 export function renderConnectedContent(): string {
   const server = activeServer();
   if (!server) return renderWelcome();
-  const titles: Record<View, [string, string]> = {
+  if (state.activeView === "terminal") return renderView();
+  const titles: Record<Exclude<View, "terminal">, [string, string]> = {
     dashboard: ["Overview", "A clear read on how this machine is doing."],
-    terminal: server.authMethod === "openSsh"
-      ? ["OpenSSH terminal", `Using ${server.openSsh?.alias || server.host}. Authentication and host-key questions appear in the terminal. Config changes apply on reconnect.`]
-      : ["Terminal", "A real interactive shell, one keystroke away."],
     processes: ["Processes", "See what is using the machine right now."],
     services: ["Systemd services", "Keep systemd units healthy and moving."],
     files: ["Files", "Browse, edit, and move files over SFTP."],
@@ -270,7 +268,7 @@ export function renderConnectedContent(): string {
   const snapshotNotice = state.activeView === "dashboard"
     ? `<span class="overview-snapshot-note">${icon("info")} Snapshot metrics · not live</span>`
     : "";
-  return `<div class="page-head"><div><div class="eyebrow">${escapeHtml(server.name)} <span class="eyebrow-separator">/</span> ${title}</div><h1>${title}</h1><p>${escapeHtml(subtitle)}</p></div><div class="page-actions">${snapshotNotice}${state.activeView === "terminal" ? "" : `<button class="button button-quiet ${dockShown() ? "active" : ""}" data-action="toggle-dock" title="Terminals beside this view (Ctrl+\`)">${icon("terminalSmall")} Terminal</button>`}<button class="button button-quiet" data-action="refresh">${icon("refresh")} Refresh</button></div></div>${renderView()}`;
+  return `<div class="page-head"><div><div class="eyebrow">${escapeHtml(server.name)} <span class="eyebrow-separator">/</span> ${title}</div><h1>${title}</h1><p>${escapeHtml(subtitle)}</p></div><div class="page-actions">${snapshotNotice}<button class="button button-quiet ${dockShown() ? "active" : ""}" data-action="toggle-dock" title="Terminals beside this view (Ctrl+\`)">${icon("terminalSmall")} Terminal</button><button class="button button-quiet" data-action="refresh">${icon("refresh")} Refresh</button></div></div>${renderView()}`;
 }
 
 export function renderView(): string {

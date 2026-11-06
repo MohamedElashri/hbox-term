@@ -240,6 +240,35 @@ class Server(paramiko.ServerInterface):
     def check_channel_request(self, kind, channel_id):
         return paramiko.OPEN_SUCCEEDED if kind == "session" else paramiko.OPEN_FAILED_ADMINISTRATIVELY_PROHIBITED
 
+    def check_channel_shell_request(self, channel):
+        if MODE != 'features':
+            return False
+
+        def echo():
+            # A disposable interactive SSH channel, not a real command shell.
+            # Echo complete lines and let the native UI exercise reconnect.
+            try:
+                channel.sendall(b'fixture-terminal-ready\r\n$ ')
+                pending = b''
+                while data := channel.recv(4096):
+                    pending += data
+                    while b'\r' in pending or b'\n' in pending:
+                        end = min(index for index, byte in enumerate(pending) if byte in (10, 13))
+                        line, pending = pending[:end], pending[end + 1:].lstrip(b'\r\n')
+                        if line == b'exit':
+                            channel.send_exit_status(0)
+                            channel.shutdown_write()
+                            time.sleep(0.05)
+                            return
+                        channel.sendall(line + b'\r\n$ ')
+            except (EOFError, OSError, paramiko.SSHException):
+                pass
+            finally:
+                channel.close()
+
+        threading.Thread(target=echo, daemon=True).start()
+        return True
+
     def check_channel_exec_request(self, channel, command):
         def reply():
             if MODE == "features":

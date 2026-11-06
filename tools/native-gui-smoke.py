@@ -105,6 +105,22 @@ def type_into(selector, text):
 def shown(selector):
     return execute("const el=document.querySelector(arguments[0]);return !!el && !!el.getClientRects().length;", selector)
 
+def compact_terminal_geometry():
+    result = execute("""
+      const surface=document.querySelector('[data-terminal-surface]'), content=document.querySelector('.content-area');
+      const frame=content.getBoundingClientRect(), terminal=surface.getBoundingClientRect();
+      const tabs=document.querySelector('.workspace-tabbar').getBoundingClientRect();
+      const controls=Array.from(content.querySelectorAll('[data-action="new-terminal"], [data-action="clear-terminal"], [data-action="reconnect-terminal"]'));
+      return {gap:terminal.top-tabs.bottom, bottom:frame.bottom-terminal.bottom,
+        height:terminal.height, available:frame.height, scroll:content.scrollHeight-content.clientHeight,
+        heading:!!content.querySelector('.page-head'),
+        controlsFit:controls.length>=2 && controls.every(el=>{const r=el.getBoundingClientRect();return r.width>0 && r.left>=frame.left && r.right<=frame.right && r.top>=frame.top && r.bottom<=terminal.top;})};
+    """)
+    assert 0 <= result['gap'] <= 40 and abs(result['bottom']) <= 1, result
+    assert result['height'] >= result['available'] - 40 and result['scroll'] <= 1, result
+    assert not result['heading'] and result['controlsFit'], result
+    return result
+
 def start():
     global session
     response = request("POST", "/session", {"capabilities": {"alwaysMatch": {"tauri:options": {"application": str(binary)}}}})
@@ -232,6 +248,30 @@ try:
     system_disk = execute("return Array.from(document.querySelectorAll('.stat-card')).find(el=>el.textContent.includes('System disk'))?.textContent;")
     assert '25%' in system_disk and 'free on /' in system_disk and '/run' not in system_disk, system_disk
     check('real SSH host-key review, rejected-password recovery and root-filesystem overview')
+    click('.nav-item[data-view="terminal"]')
+    wait(lambda: execute("return document.querySelector('.terminal-layer')?.textContent.includes('fixture-terminal-ready');"), 'interactive SSH terminal output')
+    def remote_input(text):
+        target = execute("return document.querySelector('.terminal-host:not([hidden]) .xterm-helper-textarea');")
+        request('POST', f'/session/{session}/element/{target["element-6066-11e4-a52e-4f735466cecf"]}/value', {'text':text})
+    remote_input('CI_REMOTE_λ_漢字\n')
+    wait(lambda: execute("return document.querySelector('.terminal-layer')?.textContent.includes('CI_REMOTE_λ_漢字');"), 'SSH input and UTF-8 echo')
+    for width, height in [(1400, 900), (820, 650), (640, 480)]:
+        request('POST', f'/session/{session}/window/rect', {'width':width, 'height':height})
+        wait(lambda: execute('return Math.abs(window.innerWidth-arguments[0])<=16;', width), 'resized remote terminal viewport')
+        compact_terminal_geometry()
+    screenshot('remote-terminal-compact.png')
+    click('[data-action="clear-terminal"]')
+    remote_input('exit\n')
+    wait(lambda: shown('[data-action="reconnect-terminal"]'), 'disconnected terminal keeps reconnect accessible')
+    compact_terminal_geometry()
+    click('[data-action="reconnect-terminal"]')
+    wait(lambda: execute("return document.querySelector('.terminal-layer')?.textContent.includes('fixture-terminal-ready');"), 'reconnected SSH terminal')
+    assert not execute("return document.querySelector('.terminal-layer')?.textContent.includes('CI_REMOTE_λ_漢字');"), 'Reconnect must not replay terminal input'
+    remote_input('exit\n')
+    wait(lambda: shown('[data-action="reconnect-terminal"]'), 'fixture terminal cleanup')
+    request('POST', f'/session/{session}/window/rect', {'width':1400, 'height':900})
+    click('.nav-item[data-view="dashboard"]')
+    check('remote SSH terminal uses one compact control row and fills desktop/narrow windows, with working input, Clear and reconnect')
     for view, expected_text in [
         ('processes', '/usr/bin/fixture --label two words'),
         ('services', 'failed.service'),

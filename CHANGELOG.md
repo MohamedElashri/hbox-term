@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Reduce the header space above remote terminal sessions.
+
 ## 0.3.0 - 2026-11-06
 
 - Add native OpenSSH connections, password prompts and external password-provider references.
