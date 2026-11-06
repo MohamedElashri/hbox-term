@@ -1,12 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 - 2026-11-06
 
-- Share OpenSSH terminals, files and tunnels, with safer reconnects and saved workspaces.
-- Add password prompts, credential-provider references, privacy controls and clearer agent approval guidance.
-- Add resumable transfers, connection-library backups and coordinated update/restart recovery.
-- Fix transfer pausing, file permissions, cron schedules, failed services, APT architecture matching, system metrics and unsaved drafts.
-- Build macOS packages with free ad-hoc signing, verified downloads and clear first-launch instructions.
+- Add native OpenSSH connections, password prompts and external password-provider references.
+- Add saved workspaces, resumable transfers, connection backups and safer restart recovery.
+- Improve terminal behavior, credential privacy, SSH imports and remote tools.
+- Fix transfer pausing, file permissions, cron parsing, system reporting and lost connection drafts.
+- Make update checks easier to find and support free ad-hoc-signed macOS builds.
 
 ## 0.2.1 - 2026-11-05
 
