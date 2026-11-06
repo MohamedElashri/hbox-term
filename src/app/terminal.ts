@@ -1,3 +1,4 @@
+import { shutdownFrozen } from "./shutdown-freeze";
 import { ClipboardHistory } from "./clipboard-history";
 import { confirmTerminalClose } from "./terminal-close";
 import { parseSavedLayout, type SavedPane, type SavedSession } from "./saved-layout";
@@ -62,6 +63,7 @@ export function createTerminalSurface(tab: TerminalTab): TerminalSurface {
     },
     onFinished: (command, seconds) => notifyCommandFinished(tab, command.exitCode ?? 0, seconds),
     onInput: (data) => {
+      if (shutdownFrozen()) return;
       // After the process exits, any key closes the pane (Ghostty's wait-after-command).
       if (tab.closed) { if (tab.phase !== "dormant" && !tab.connecting && tab.serverId === LOCAL_SERVER_ID) void closeTerminal(tab.id); return; }
       const group = terminalGroupOf(tab.id);
@@ -322,7 +324,7 @@ async function openTerminal(placement: Placement, command?: string, title?: stri
   if (placement.kind === "restore") {
     tab.phase = "dormant"; tab.closed = true; tab.connecting = false; tab.sessionId = undefined;
     tab.cwd = placement.pane.cwd;
-    surface.notice("Saved layout. This is historical output; start the session when ready.");
+    surface.notice(placement.pane.snapshot ? "Saved layout. This is historical output; start the session when ready." : "Saved layout. Start a new session when ready.");
     return;
   }
   state.activeTerminalTabId = id;

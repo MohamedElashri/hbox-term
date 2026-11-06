@@ -5,7 +5,7 @@ DEBUG_BINARY := src-tauri/target/debug/ternway
 RELEASE_BINARY := src-tauri/target/release/ternway
 
 .DEFAULT_GOAL := help
-.PHONY: help install dev build build-debug run run-release check test test-ts test-rust test-ssh-password test-openssh lint fmt fmt-check bench clean qa-macos
+.PHONY: help install dev build build-debug run run-release check test test-ts test-rust test-ssh-password test-openssh lint fmt fmt-check bench clean qa-macos test-soak
 
 help: ## List the targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F ':.*## ' '{printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -54,6 +54,9 @@ test-ssh-password: ## Real SSH password and keyboard-interactive fixture (see DE
 
 test-openssh: ## Native OpenSSH config, jump/proxy, authentication and PTY lifecycle fixtures
 	TERNWAY_SSH_TEST_PYTHON="$${TERNWAY_SSH_TEST_PYTHON:-python3}" cargo test $(CARGO_MANIFEST) --lib loopback_openssh -- --ignored
+
+test-soak: ## Repeated real PTY lifecycle, job cleanup, Unicode/output and resize checks
+	cargo test $(CARGO_MANIFEST) --lib repeated_terminal_lifecycle_soak -- --ignored --nocapture --test-threads=1
 
 lint: node_modules ## TypeScript type check and clippy
 	npx tsc --noEmit

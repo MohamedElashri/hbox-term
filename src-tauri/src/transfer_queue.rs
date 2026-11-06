@@ -30,6 +30,7 @@ struct Document {
 pub struct TransferQueue {
     path: PathBuf,
     jobs: Mutex<Vec<Job>>,
+    recovery_notice: Option<String>,
 }
 impl TransferQueue {
     pub fn open(path: PathBuf) -> Result<Self, String> {
@@ -65,7 +66,25 @@ impl TransferQueue {
         Ok(Self {
             path,
             jobs: Mutex::new(jobs),
+            recovery_notice: None,
         })
+    }
+    pub fn open_recovering(path: PathBuf) -> Result<Self, String> {
+        match Self::open(path.clone()) {
+            Ok(queue) => Ok(queue),
+            Err(error) => {
+                if !std::fs::symlink_metadata(&path).is_ok_and(|m| m.is_file()) {
+                    return Err(error);
+                }
+                let retained = path
+                    .with_file_name(format!("transfers-recovery-{}.json", uuid::Uuid::new_v4()));
+                std::fs::rename(&path, &retained)
+                    .map_err(|e| format!("Could not retain damaged queue: {e}"))?;
+                let mut queue = Self::open(path)?;
+                queue.recovery_notice=Some(format!("The previous transfer queue could not be read. It was retained at {}. No jobs were started. File checkpoints were kept.",retained.display()));
+                Ok(queue)
+            }
+        }
     }
     pub fn pending_count(&self, server: Option<&str>) -> usize {
         self.jobs
@@ -219,6 +238,11 @@ pub fn commit_download(source: &Path, destination: &Path) -> Result<(), String> 
             std::io::Error::last_os_error()
         ))
     }
+}
+
+#[tauri::command]
+pub fn transfer_queue_notice(queue: State<'_, TransferQueue>) -> Option<String> {
+    queue.recovery_notice.clone()
 }
 
 #[tauri::command]
@@ -384,6 +408,26 @@ pub fn run_transfer_job(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn corrupt_queue_is_retained_without_preventing_terminal_startup() {
+        let dir =
+            std::env::temp_dir().join(format!("ternway-queue-corrupt-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("transfers.json");
+        std::fs::write(&path, b"interrupted fixture data").unwrap();
+        let queue = TransferQueue::open_recovering(path.clone()).unwrap();
+        assert!(queue.jobs.lock().unwrap().is_empty());
+        assert!(queue.recovery_notice.as_ref().unwrap().contains("retained"));
+        let saved = std::fs::read_dir(&dir)
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        assert_eq!(std::fs::read(saved).unwrap(), b"interrupted fixture data");
+        assert!(!path.exists());
+        let _ = std::fs::remove_dir_all(dir);
+    }
     #[test]
     fn resume_checks_every_byte_and_rejects_short_or_changed_checkpoints() {
         let data = vec![42; 100000];

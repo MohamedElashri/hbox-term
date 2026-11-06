@@ -1,13 +1,12 @@
 // The Updates section of Settings, driving UpdateController with the updater plugin.
 import { invoke } from "@tauri-apps/api/core";
-import { relaunch } from "@tauri-apps/plugin-process";
+
 import { check } from "@tauri-apps/plugin-updater";
 import { icon } from "../icons";
 import { escapeHtml, formatBytes } from "./format";
 import { root } from "./state";
 import { UpdateController } from "./updates";
 import { BRAND } from "./brand";
-import { saveSession } from "./session-save";
 
 export const RELEASES_URL = BRAND.releases;
 
@@ -39,8 +38,7 @@ async function loadMetadata(): Promise<void> {
 }
 
 export const updates = new UpdateController(() => check({ timeout: 20_000 }), async () => {
-  await saveSession();
-  await relaunch();
+  await invoke("request_app_restart");
 }, refreshSection, async () => {
   await loadMetadata();
   if (!metadata) throw new Error(metadataError);

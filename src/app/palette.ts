@@ -87,6 +87,7 @@ function buildItems(): PaletteItem[] {
     { title: "Manage connection library and backups", kind: "App", run: () => runAction("library-tools") },
     { title: "Transfer queue", kind: "App", run: () => runAction("transfer-queue") },
     { title: "Saved workspaces", kind: "App", run: () => runAction("workspace-library") },
+    { title: "Restart Ternway", kind: "App", run: () => runAction("restart-app") },
     { title: "New window", kind: "App", run: () => runAction("new-workspace-window") },
     { title: "Save workspace layout", kind: "App", run: () => runAction("save-workspace-layout") },
     { title: "Local shells", kind: "App", run: () => selectLocalWorkspace() },

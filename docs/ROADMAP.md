@@ -14,7 +14,8 @@ The preceding QA/password fixes and native OpenSSH support are merged in #6 and 
    stress and protection when closing active jobs.
 5. **Credentials — merged in #13; live provider reads deferred by request.** External credential references, provider flows and live verification,
    manual/idle/screen locking and clipboard/scrollback/log privacy controls.
-6. **Library, transfers and portability — in progress.** Deduplicated imports, source reconciliation,
+6. **Library, transfers and portability — merged in #14.** Deduplicated imports, source reconciliation,
    bulk editing, resumable queued transfers and versioned backup/restore with explicit secrets.
-7. **Release confidence — pending.** Native GUI and platform coverage, soak/update recovery,
-   properly signed/notarized macOS artifacts and documented release gates.
+7. **Release confidence — implemented in #15; notarization verification deferred by request.**
+   Native GUI coverage, soak/update recovery and distribution gates requiring valid Developer ID
+   signing, notarization and updater signatures. The revoked local certificate must be replaced.

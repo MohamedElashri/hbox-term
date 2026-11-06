@@ -633,6 +633,21 @@ mod tests {
         assert!(text.contains("43 132"));
     }
 
+    #[test]
+    #[ignore = "Run make test-soak for repeated real PTY lifecycle/output checks"]
+    fn repeated_terminal_lifecycle_soak() {
+        let cycles = std::env::var("TERNWAY_SOAK_CYCLES")
+            .ok()
+            .and_then(|s| s.parse::<usize>().ok())
+            .unwrap_or(12)
+            .clamp(1, 1000);
+        for cycle in 1..=cycles {
+            activity_detects_foreground_and_background_jobs_without_terminal_input();
+            large_output_unicode_alternate_screen_and_resize_survive_backpressure();
+            eprintln!("PTY soak cycle {cycle}/{cycles} passed");
+        }
+    }
+
     fn run_shell(script: &str) -> (String, String) {
         let (frames, received) = mpsc::channel();
         let output = Channel::new(move |body| {

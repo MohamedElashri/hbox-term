@@ -1391,7 +1391,20 @@ fn set_window_restore(app: AppHandle, window: tauri::WebviewWindow, enabled: boo
     Ok(desktop_windows::set_restore(&app, window.label(), enabled)?)
 }
 #[tauri::command]
-fn pending_quit(app: AppHandle, window: tauri::WebviewWindow) -> Option<String> { desktop_windows::pending_quit(&app, window.label()) }
+fn request_app_quit(app: AppHandle) -> Result<(), AppError> { Ok(desktop_windows::request_quit(&app)?) }
+
+#[tauri::command]
+async fn request_app_restart(app: AppHandle) -> Result<(), AppError> {
+    let result=desktop_windows::request_restart(&app)?;
+    tauri::async_runtime::spawn_blocking(move || result.recv_timeout(std::time::Duration::from_secs(125)).map_err(|_| "Restart cancelled because a window did not finish saving".to_string())?)
+        .await.map_err(|error|error.to_string())??;
+    Ok(())
+}
+#[tauri::command]
+fn cancel_app_shutdown(app: AppHandle, token: String) -> Result<(), AppError> { Ok(desktop_windows::cancel_shutdown(&app,&token)?) }
+
+#[tauri::command]
+fn pending_quit(app: AppHandle, window: tauri::WebviewWindow) -> Option<serde_json::Value> { desktop_windows::pending_quit(&app, window.label()) }
 #[tauri::command]
 fn acknowledge_quit(app: AppHandle, window: tauri::WebviewWindow, token: String, ready: bool) -> Result<(), AppError> { Ok(desktop_windows::acknowledge_quit(&app, window.label(), &token, ready)?) }
 
@@ -1844,7 +1857,6 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(tauri_plugin_process::init())
         .manage(config::ConfigWatcher::default())
         .manage(remote_edit::RemoteEdits::default())
         .setup(|app| {
@@ -1915,7 +1927,7 @@ pub fn run() {
             }
             let state = AppState::open(data_dir.clone()).map_err(std::io::Error::other)?;
             app.manage(state);
-            app.manage(transfer_queue::TransferQueue::open(data_dir.join("transfers.json")).map_err(std::io::Error::other)?);
+            app.manage(transfer_queue::TransferQueue::open_recovering(data_dir.join("transfers.json")).map_err(std::io::Error::other)?);
             vault_lock::install(app.handle());
             desktop_windows::setup(app.handle()).map_err(std::io::Error::other)?;
             // `ternway --toggle-quick` as the first launch opens only the quick terminal.
@@ -2018,6 +2030,7 @@ pub fn run() {
             write_remote_file,
             remote_file_action,
             transfer_queue::list_transfer_jobs,
+            transfer_queue::transfer_queue_notice,
             transfer_queue::enqueue_transfer,
             transfer_queue::transfer_job_action,
             transfer_queue::run_transfer_job,
@@ -2038,6 +2051,9 @@ pub fn run() {
             new_workspace_window,
             acknowledge_quit,
             pending_quit,
+            request_app_restart,
+            cancel_app_shutdown,
+            request_app_quit,
             set_window_restore,
             start_remote_edit,
             configure_quick_terminal,

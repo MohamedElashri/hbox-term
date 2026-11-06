@@ -1,0 +1,29 @@
+name: Linux dependencies
+description: Install signed Ubuntu packages through the official HTTPS archive
+inputs:
+  packages:
+    description: Space-separated Ubuntu package names
+    required: true
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        APT_PACKAGES: ${{ inputs.packages }}
+      run: |
+        set -euo pipefail
+        # Some hosted runners hit a persistently slow Azure mirror. Keep Ubuntu's
+        # signed repositories and use its official archive over HTTPS instead.
+        # Ubuntu 24.04 runners can use mirror+file rather than direct source URLs.
+        for source in /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources /etc/apt/apt-mirrors.txt; do
+          if [[ -f "$source" ]]; then
+            sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g; s|https://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g; s|http://security.ubuntu.com/ubuntu|https://security.ubuntu.com/ubuntu|g' "$source"
+          fi
+        done
+        read -r -a packages <<< "$APT_PACKAGES"
+        for package in "${packages[@]}"; do
+          [[ "$package" =~ ^[a-z0-9][a-z0-9.+:-]*$ ]] || { echo 'Invalid package name' >&2; exit 1; }
+        done
+        options=(-o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o Acquire::ForceIPv4=true)
+        sudo apt-get "${options[@]}" update
+        sudo apt-get "${options[@]}" install --no-install-recommends -y "${packages[@]}"
