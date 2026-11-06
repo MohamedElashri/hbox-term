@@ -28,15 +28,9 @@ jobs:
         with:
           node-version: '24'
 
-      - name: Require production signing and notarization credentials
+      - name: Require updater signing key
         env:
           HAS_TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
-          HAS_APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE != '' }}
-          HAS_APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD != '' }}
-          HAS_APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER != '' }}
-          HAS_APPLE_API_KEY: ${{ secrets.APPLE_API_KEY != '' }}
-          HAS_APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY != '' }}
-          APPLE_SIGNING_IDENTITY: ${{ vars.APPLE_SIGNING_IDENTITY }}
         run: node tools/release-credentials.mjs
 
       - name: Check version, changelog and signing key
@@ -70,6 +64,12 @@ jobs:
             echo "CHANGELOG.md has no entry for $version." >&2
             exit 1
           fi
+          cat >> release-notes.md <<'NOTES'
+
+          macOS builds are ad-hoc signed and are not notarized by Apple. On first launch,
+          macOS may require approval in System Settings > Privacy & Security > Open Anyway.
+          Update downloads are still verified with Ternway's updater signing key.
+          NOTES
 
       - name: Create or reuse draft release
         id: release
@@ -182,18 +182,6 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Prepare notarization API key
-        if: matrix.os == 'macos'
-        env:
-          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
-        run: |
-          node --input-type=module <<'JS'
-          import {writeFileSync} from 'node:fs';
-          import {join} from 'node:path';
-          const path = join(process.env.RUNNER_TEMP, 'ternway-notarization.p8');
-          writeFileSync(path, process.env.APPLE_API_PRIVATE_KEY, {mode: 0o600});
-          JS
-
       - name: Build and upload bundles
         uses: tauri-apps/tauri-action@v1
         env:
@@ -201,12 +189,7 @@ jobs:
           # Signs the updater artifacts (.AppImage, .deb, .rpm, .app.tar.gz) for in-app updates.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ matrix.os == 'macos' && vars.APPLE_SIGNING_IDENTITY || '' }}
-          APPLE_CERTIFICATE: ${{ matrix.os == 'macos' && secrets.APPLE_CERTIFICATE || '' }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ matrix.os == 'macos' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
-          APPLE_API_ISSUER: ${{ matrix.os == 'macos' && secrets.APPLE_API_ISSUER || '' }}
-          APPLE_API_KEY: ${{ matrix.os == 'macos' && secrets.APPLE_API_KEY || '' }}
-          APPLE_API_KEY_PATH: ${{ matrix.os == 'macos' && format('{0}/ternway-notarization.p8', runner.temp) || '' }}
+          APPLE_SIGNING_IDENTITY: ${{ matrix.os == 'macos' && '-' || '' }}
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
           tagName: ${{ env.RELEASE_TAG }}
@@ -216,7 +199,7 @@ jobs:
           uploadUpdaterSignatures: true
           args: --target ${{ matrix.rust_target }}
 
-      - name: Verify macOS signing, notarization and stapled tickets
+      - name: Verify ad-hoc macOS signature and disk image
         if: matrix.os == 'macos'
         env:
           RUST_TARGET: ${{ matrix.rust_target }}
@@ -226,10 +209,6 @@ jobs:
           dmg="$(find "src-tauri/target/$RUST_TARGET/release/bundle/dmg" -maxdepth 1 -name '*.dmg' -print -quit)"
           test -n "$dmg"
           bash tools/verify-macos-release.sh "$app" "$dmg"
-
-      - name: Remove notarization key file
-        if: always() && matrix.os == 'macos'
-        run: rm -f "$RUNNER_TEMP/ternway-notarization.p8"
 
   publish-release:
     name: Publish release

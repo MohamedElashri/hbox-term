@@ -63,6 +63,21 @@ In-app updates are verified against the public key in `src-tauri/tauri.conf.json
 refuses to run without it. `tools/update-manifest.mjs` rejects a release whose signatures come from
 another key or that lacks a platform.
 
+### Free macOS distribution
+
+macOS bundles use Tauri's ad-hoc signing identity (`bundle.macOS.signingIdentity = "-"`).
+No Apple developer account, certificate or notarization credentials are required. Release
+builds verify the bundle's signature integrity and DMG before publication. macOS CI also
+builds and verifies a real app bundle without Apple credentials.
+
+Ad-hoc signing does not identify the publisher to Apple or provide notarization. Release
+notes and the README explain macOS's manual first-launch approval in Privacy & Security.
+The installer leaves quarantine and Gatekeeper settings intact. Download checksums and
+the separate updater signing key remain required; ad-hoc signing never replaces updater
+signature verification. See [Tauri's ad-hoc signing guide](https://v2.tauri.app/distribute/sign/macos/#ad-hoc-signing).
+
+### Keeping the updater key
+
 Keep a backup of the private key: installed copies only accept updates signed with it, so losing
 it means users must reinstall by hand. For a local signed build:
 

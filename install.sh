@@ -69,13 +69,13 @@ case "$asset" in
     app_name=Ternway
     [ -d "$tmp/mnt/$app_name.app" ] || die "no application bundle found in the disk image"
     codesign --verify --deep --strict "$tmp/mnt/$app_name.app" || die "application signature verification failed"
-    spctl --assess --type execute "$tmp/mnt/$app_name.app" || die "macOS did not approve this application"
-    xcrun stapler validate "$tmp/mnt/$app_name.app" || die "application notarization ticket is missing or invalid"
     rm -rf "/Applications/$app_name.app"
     cp -R "$tmp/mnt/$app_name.app" /Applications/
     hdiutil detach -quiet "$tmp/mnt"
     mounted=
-    echo "Installed /Applications/$app_name.app" ;;
+    echo "Installed /Applications/$app_name.app"
+    echo 'This macOS build is ad-hoc signed and not notarized by Apple.'
+    echo 'If macOS blocks first launch, review the app in System Settings > Privacy & Security > Open Anyway.' ;;
   *.deb) sudo apt-get install -y "$file" ;;
   *.rpm)
     if command -v dnf >/dev/null 2>&1; then sudo dnf install -y "$file"

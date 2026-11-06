@@ -79,9 +79,14 @@ def element(selector):
 
 def click(selector):
     deadline = time.monotonic() + 30
+    def prepare():
+        target = element(selector)
+        present = execute("const el=document.querySelector(arguments[0]); if(!el) return false; el.scrollIntoView({block:'center'}); return true;", selector)
+        return target if present else None
     while time.monotonic() < deadline:
-        target = wait(lambda: element(selector), selector)
-        execute("document.querySelector(arguments[0]).scrollIntoView({block:'center'});", selector)
+        # Lookup/scroll are safe to retry if WebKit resets its connection during
+        # a render. Do not replay a click whose delivery is uncertain.
+        target = wait(prepare, selector, timeout=max(0, deadline-time.monotonic()))
         try:
             request("POST", f"/session/{session}/element/{target}/click", {})
             return
@@ -307,12 +312,12 @@ try:
     def app_exited():
         try:
             return not request("GET", f"/session/{session}/window/handles")
-        except (RuntimeError, urllib.error.URLError):
+        except (RuntimeError, urllib.error.URLError, http.client.RemoteDisconnected):
             return True
     wait(app_exited, "coordinated quit completed without killing the application")
     try:
         request("DELETE", f"/session/{session}")
-    except (RuntimeError, urllib.error.URLError):
+    except (RuntimeError, urllib.error.URLError, http.client.RemoteDisconnected):
         pass
     session = None
     (data_dir / "transfers.json").write_text("damaged test queue")

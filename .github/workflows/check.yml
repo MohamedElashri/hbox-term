@@ -53,3 +53,8 @@ jobs:
         run: make test-managed-tools
         env:
           TERNWAY_SSH_TEST_PYTHON: python
+      - name: Build and verify free macOS bundle
+        if: runner.os == 'macOS'
+        run: |
+          npm run tauri -- build --debug --bundles app --config '{"bundle":{"createUpdaterArtifacts":false}}'
+          bash tools/verify-macos-release.sh 'src-tauri/target/debug/bundle/macos/Ternway.app'

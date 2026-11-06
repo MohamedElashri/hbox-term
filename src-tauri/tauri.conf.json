@@ -41,7 +41,10 @@
     "category": "DeveloperTool",
     "shortDescription": "Local shells and remote machines in one workspace",
     "longDescription": "Ternway brings local terminals, organized SSH connections and server tools together on macOS and Linux.",
-    "createUpdaterArtifacts": true
+    "createUpdaterArtifacts": true,
+    "macOS": {
+      "signingIdentity": "-"
+    }
   },
   "plugins": {
     "updater": {
