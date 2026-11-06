@@ -292,7 +292,9 @@ try:
     remote_input('exit\n')
     wait(lambda: shown('[data-action="reconnect-terminal"]'), 'fixture terminal cleanup')
     request('POST', f'/session/{session}/window/rect', {'width':1400, 'height':900})
+    wait(lambda: execute('return Math.abs(window.innerWidth-1400)<=16;'), 'desktop viewport restored after narrow terminal checks')
     click('.nav-item[data-view="dashboard"]')
+    wait(lambda: execute("return !!document.querySelector('.nav-item.active[data-view=dashboard]') && !!document.querySelector('.page-head');"), 'overview restored before remote-tool navigation')
     check('remote SSH terminal uses one compact control row and fills desktop/narrow windows, with working input, Clear and reconnect')
     for view, expected_text in [
         ('processes', '/usr/bin/fixture --label two words'),
