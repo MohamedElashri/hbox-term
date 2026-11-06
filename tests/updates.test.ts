@@ -147,3 +147,15 @@ test("a failed restart keeps the installed update ready to retry", async () => {
   assert.equal(restarts, 2);
   assert.equal(controller.state.error, undefined);
 });
+
+test("cancelling restart keeps an installed update ready without displaying a failure", async () => {
+  const controller = new UpdateController(async () => fakeUpdate([]), async () => { throw { message: "Restart cancelled; all windows remain open" }; }, () => {});
+  await controller.checkNow(); await controller.install(); await controller.restartNow();
+  assert.equal(controller.state.phase, "installed"); assert.equal(controller.state.error, undefined);
+});
+test("structured restart errors show their message instead of object serialization", async () => {
+  const controller = new UpdateController(async () => fakeUpdate([]), async () => { throw { message: "Saving a window failed" }; }, () => {});
+  await controller.checkNow(); await controller.install(); await controller.restartNow();
+  assert.match(controller.state.error ?? "", /Saving a window failed/);
+  assert.doesNotMatch(controller.state.error ?? "", /object Object/);
+});

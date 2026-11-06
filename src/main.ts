@@ -1,3 +1,4 @@
+import { freezeShutdown, releaseShutdown, shutdownFrozen } from "./app/shutdown-freeze";
 import { refreshTransferQueue } from "./app/transfer-queue";
 import { flushRemoteEdits } from "./app/terminal";
 import { installCredentialPrivacy } from "./app/credential-privacy";
@@ -38,14 +39,15 @@ let finishBootstrap: () => void;
 const windowReady = new Promise<void>(resolve => { finishBootstrap = resolve; });
 let bootstrapSucceeded = false;
 const preparedQuitTokens = new Set<string>();
-async function prepareQuit(token: string): Promise<void> {
+async function prepareQuit(token: string, restart = false): Promise<void> {
   if (preparedQuitTokens.has(token)) return;
   preparedQuitTokens.add(token);
   if (preparedQuitTokens.size > 8) preparedQuitTokens.delete(preparedQuitTokens.values().next().value!);
   await windowReady;
-  if (!await confirmTerminalClose(state.terminalTabs, "Quit Ternway", "quit")) {
+  if (!await confirmTerminalClose(state.terminalTabs, restart ? "Restart Ternway" : "Quit Ternway", "quit")) {
     await invoke("acknowledge_quit", { token, ready: false }); return;
   }
+  freezeShutdown(token, restart);
   if (!await flushRemoteEdits(state.terminalTabs)) { await invoke("acknowledge_quit", { token, ready: false }); return; }
   cancelCurrentOperation();
   let ready = false;
@@ -57,15 +59,16 @@ async function prepareQuit(token: string): Promise<void> {
 async function installEventListeners(): Promise<void> {
   await installCredentialPrivacy();
   state.terminalUnlisteners.push(...await installWindowEvents(appWindow.label, {
-    quit: token => { void prepareQuit(token); },
+    quit: (token, restart) => { void prepareQuit(token, restart); },
     about: () => { void runAction("show-about"); },
     updates: () => { void runAction("check-updates"); },
   }, listen));
-  state.terminalUnlisteners.push(await listen("library-changed", () => { void refreshSnapshot(false).then(() => render()); }));
+  state.terminalUnlisteners.push(await listen("library-changed", () => { void refreshSnapshot(false).then(() => { if (!state.modal && !state.appDialogPrompt) render(); }); }));
   state.terminalUnlisteners.push(await listen("transfer-queue-changed", () => { void refreshTransferQueue(); }));
+  state.terminalUnlisteners.push(await listen<{token: string; message: string}>("shutdown-aborted", event => { releaseShutdown(event.payload.token); showToast(event.payload.message, "info"); }));
   // Quit can be requested before this webview has installed its event listener.
-  const pending = await invoke<string | null>("pending_quit");
-  if (pending) void prepareQuit(pending);
+  const pending = await invoke<{token: string; restart: boolean} | null>("pending_quit");
+  if (pending) void prepareQuit(pending.token, pending.restart);
   state.terminalUnlisteners.push(await listen<TerminalEvent>("log-stream-output", (event) => {
     if (state.logsViewer.streamId === event.payload.sessionId) appendLogOutput(state.logsViewer, event.payload.data, "workspace");
     else if (state.containerLogViewer?.streamId === event.payload.sessionId) appendLogOutput(state.containerLogViewer, event.payload.data, "container");
@@ -129,6 +132,7 @@ root.addEventListener("click", (event) => {
 window.addEventListener("contextmenu", (event) => { event.preventDefault(); }, { capture: true });
 document.addEventListener("focusin", event => containModalFocus(root, event));
 window.addEventListener("keydown", (event) => {
+  if (shutdownFrozen() && !(event.target instanceof Element && event.target.closest(".shutdown-freeze"))) { event.preventDefault(); event.stopImmediatePropagation(); return; }
   if (composingText(event)) return;
   // This listener runs in capture phase, before the picker's key handler.
   const openPicker = root.querySelector<HTMLElement>(".custom-select.open");
@@ -214,6 +218,7 @@ function startSessionSaving(): void {
     void saveSession().catch(error => showToast(`Could not save the workspace: ${errorText(error)}`, "info"));
   }, SESSION_SAVE_INTERVAL_MS);
   void appWindow.onCloseRequested(async event => {
+    if (shutdownFrozen()) { event.preventDefault(); return; }
     if (!await confirmTerminalClose(state.terminalTabs, "Close window", "window")) { event.preventDefault(); return; }
     if (!await flushRemoteEdits(state.terminalTabs)) { event.preventDefault(); return; }
     cancelCurrentOperation();

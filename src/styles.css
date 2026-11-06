@@ -730,3 +730,8 @@ h1 { margin-bottom: 0; font: 600 35px/1.05 var(--font-display); letter-spacing: 
 .modal-library { display: flex; flex-direction: column; overflow: hidden; max-height: calc(100vh - 48px); }
 .modal-library .modal-head { flex: 0 0 auto; }
 .modal-library > .modal-body { min-height: 0; overflow-y: auto; }
+.shutdown-freeze { position: fixed; inset: 0; z-index: 30000; display: grid; place-items: center; padding: 24px; background: rgb(12 17 28 / 65%); }
+.shutdown-freeze > div { width: min(400px, 100%); padding: 24px; border-radius: 12px; background: #fff; color: #1d2939; box-shadow: 0 12px 48px rgb(0 0 0 / 24%); }
+.shutdown-freeze strong { font: 600 20px/1.4 var(--font-ui); }
+.shutdown-freeze p { margin: 12px 0 20px; line-height: 1.6; }
+.shutdown-freeze .button { color: #1d2939; border-color: #98a2b3; }

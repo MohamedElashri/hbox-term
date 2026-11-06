@@ -2,6 +2,12 @@
 // downloaded or installed until install(). The updater plugin verifies each download against the
 // public key in tauri.conf.json before install() runs.
 
+function updateError(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === "object" && "message" in error && typeof error.message === "string") return error.message;
+  return String(error);
+}
+
 /** The part of the updater plugin's `Update` this controller uses. */
 export interface UpdatePackage {
   version: string;
@@ -69,7 +75,7 @@ export class UpdateController {
       const update = this.pending;
       this.set(update ? { phase: "available", version: update.version, notes: update.body, date: update.date } : { phase: "current" });
     } catch (error) {
-      this.set({ phase: "error", error: `Could not check for updates. Check your connection and try again. ${String(error)}` });
+      this.set({ phase: "error", error: `Could not check for updates. Check your connection and try again. ${updateError(error)}` });
     }
   }
 
@@ -92,7 +98,7 @@ export class UpdateController {
       await update.install();
       this.set({ phase: "installed" });
     } catch (error) {
-      this.set({ phase: "error", error: `The update could not be installed. Check again to retry, or download it from the releases page. ${String(error)}` });
+      this.set({ phase: "error", error: `The update could not be installed. Check again to retry, or download it from the releases page. ${updateError(error)}` });
     } finally {
       await this.release();
     }
@@ -104,7 +110,8 @@ export class UpdateController {
     try {
       await this.restart();
     } catch (error) {
-      this.set({ phase: "installed", error: `Could not restart Ternway. Quit and reopen it to finish updating. ${String(error)}` });
+      if (updateError(error) === "Restart cancelled; all windows remain open") { this.set({ phase: "installed", error: undefined }); return; }
+      this.set({ phase: "installed", error: `Could not restart Ternway. Quit and reopen it to finish updating. ${updateError(error)}` });
     }
   }
 }

@@ -313,6 +313,7 @@ export async function runAction(action: string, target: HTMLElement = document.c
       break;
     }
     case "add-server": state.editingServer = null; state.modal = "server"; state.errorMessage = ""; render(); break;
+    case "restart-app": await invoke("request_app_restart"); break;
     case "show-about":
       state.modal = "about"; render();
       try { await loadAboutMetadata(); if (state.modal === "about") render(); } catch (error) { setError(error); }
