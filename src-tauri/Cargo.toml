@@ -1,6 +1,6 @@
 [package]
 name = "ternway"
-version = "0.2.1"
+version = "0.3.0"
 description = "Ternway: a fast local and remote terminal workspace with agentless Linux server management over SSH."
 authors = ["Mohamed Elashri <git@elashri.com>"]
 license = "MIT"
