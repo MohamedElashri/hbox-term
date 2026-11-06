@@ -827,15 +827,26 @@ fn authenticate_with_cancellation(session: &Session, profile: &ServerProfile, st
     Ok(())
 }
 
+fn known_hosts_path() -> Result<PathBuf, String> {
+    // Native QA uses a disposable trust file without changing HOME or trusting
+    // unknown keys. Production builds always use the user's OpenSSH trust file.
+    #[cfg(debug_assertions)]
+    if let Some(value) = std::env::var_os("TERNWAY_QA_KNOWN_HOSTS") {
+        let path = PathBuf::from(value);
+        if !path.is_absolute() || path.file_name().is_none() {
+            return Err("QA known_hosts must be an absolute file path".into());
+        }
+        return Ok(path);
+    }
+    dirs::home_dir().map(|home| home.join(".ssh/known_hosts"))
+        .ok_or_else(|| "Could not locate your home directory for SSH host verification".into())
+}
+
 fn verify_host_key(session: &Session, profile: &ServerProfile) -> Result<(), String> {
     let Some((key, key_type)) = session.host_key() else {
         return Err("The SSH server did not present a host key".to_string());
     };
-    let Some(home) = dirs::home_dir() else {
-        return Err("Could not locate your home directory for SSH host verification".to_string());
-    };
-    let ssh_dir = home.join(".ssh");
-    let known_hosts_path = ssh_dir.join("known_hosts");
+    let known_hosts_path = known_hosts_path()?;
     let mut known_hosts = session
         .known_hosts()
         .map_err(|error| format!("Could not initialize SSH host verification: {error}"))?;
@@ -885,11 +896,9 @@ fn verify_host_key(session: &Session, profile: &ServerProfile) -> Result<(), Str
 /// libssh2) means a concurrent ssh-keygen or OpenSSH modification to the file
 /// cannot be lost.
 fn append_known_host_line(profile: &ServerProfile, key: &[u8]) -> Result<(), String> {
-    let Some(home) = dirs::home_dir() else {
-        return Err("Could not locate your home directory for SSH host verification".to_string());
-    };
-    let ssh_dir = home.join(".ssh");
-    fs::create_dir_all(&ssh_dir).map_err(|error| format!("Could not create ~/.ssh: {error}"))?;
+    let known_hosts_path = known_hosts_path()?;
+    let ssh_dir = known_hosts_path.parent().ok_or("Invalid SSH trust directory")?;
+    fs::create_dir_all(ssh_dir).map_err(|error| format!("Could not create ~/.ssh: {error}"))?;
     let algorithm = host_key_algorithm(key)
         .ok_or_else(|| "Could not determine the SSH host key algorithm".to_string())?;
     use base64::Engine as _;
@@ -900,7 +909,6 @@ fn append_known_host_line(profile: &ServerProfile, key: &[u8]) -> Result<(), Str
         format!("[{}]:{}", profile.host, profile.port)
     };
     let line = format!("{host} {algorithm} {encoded} added by ternway\n");
-    let known_hosts_path = ssh_dir.join("known_hosts");
     let mut file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -1067,11 +1075,8 @@ pub fn replace_host_key(
             "The SSH host key changed again. Expected {expected_fingerprint}, but the server now presents {fingerprint}."
         ));
     }
-    let Some(home) = dirs::home_dir() else {
-        return Err("Could not locate your home directory for SSH host verification".to_string());
-    };
-    let ssh_dir = home.join(".ssh");
-    let known_hosts_path = ssh_dir.join("known_hosts");
+    let known_hosts_path = known_hosts_path()?;
+    let ssh_dir = known_hosts_path.parent().ok_or("Invalid SSH trust directory")?;
     let mut known_hosts = session
         .known_hosts()
         .map_err(|error| format!("Could not initialize SSH host verification: {error}"))?;
@@ -1102,7 +1107,7 @@ pub fn replace_host_key(
             .remove(&entry)
             .map_err(|error| format!("Could not remove the old SSH host key: {error}"))?;
     }
-    fs::create_dir_all(&ssh_dir).map_err(|error| format!("Could not create ~/.ssh: {error}"))?;
+    fs::create_dir_all(ssh_dir).map_err(|error| format!("Could not create ~/.ssh: {error}"))?;
     let host = if profile.port == 22 {
         profile.host.clone()
     } else {

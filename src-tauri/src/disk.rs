@@ -195,7 +195,7 @@ fn parse_mounts(df_text: &str, inode_text: &str) -> Vec<DiskMount> {
             if fields.len() < 6 {
                 return None;
             }
-            let total = fields[1].parse::<u64>().ok()? * 1024;
+            let total = fields[1].parse::<u64>().ok()?.checked_mul(1024)?;
             if total == 0 {
                 return None;
             }
@@ -203,8 +203,8 @@ fn parse_mounts(df_text: &str, inode_text: &str) -> Vec<DiskMount> {
                 filesystem: fields[0].to_string(),
                 mount: fields[5..].join(" "),
                 total_bytes: total,
-                used_bytes: fields[2].parse::<u64>().ok()? * 1024,
-                available_bytes: fields[3].parse::<u64>().ok()? * 1024,
+                used_bytes: fields[2].parse::<u64>().ok()?.checked_mul(1024)?,
+                available_bytes: fields[3].parse::<u64>().ok()?.checked_mul(1024)?,
                 percent: fields[4].trim_end_matches('%').parse().unwrap_or(0.0),
                 ..DiskMount::default()
             })

@@ -356,6 +356,9 @@ pub fn run_transfer_job(
         Ok(())
     })?;
     let job = jobs.into_iter().find(|j| j.id == id).unwrap();
+    // Replace queued controls with Pause as soon as the backend starts work.
+    // Waiting until completion leaves the queue modal displaying stale actions.
+    let _ = app.emit("transfer-queue-changed", ());
     let result = if job.direction == "upload" {
         crate::providers::upload_path(
             &state.store,

@@ -13,7 +13,7 @@ import { renderUnsupported } from "./admin";
 export function renderDashboard(): string {
   if (!state.dashboard) return renderViewLoading();
   const { profile, cpu, memory, storage, uptime, network } = state.dashboard;
-  const primaryDisk = storage?.disks[0];
+  const primaryDisk = storage?.disks.find(disk => disk.mount === "/");
   const cap = profile?.capabilities;
   return `<div class="dashboard-grid">
     ${cpu ? `<div class="stat-card stat-card-large"><div class="stat-card-head"><span class="stat-icon accent">${icon("cpu")}</span><span>CPU load</span><span>SNAPSHOT</span></div><div class="stat-value">${cpu.cpuPercent.toFixed(1)}<small>%</small></div><div class="stat-meta">${cpu.cpuCores} cores · ${escapeHtml(cpu.cpuModel)}</div>${sparkline(cpu.cpuPercent, "accent")}</div>` : renderDashboardPlaceholder("div", "stat-card stat-card-large", "CPU load", "cpu")}

@@ -2,15 +2,11 @@
 
 ## Unreleased
 
-- Added OpenSSH config connections for native routing, authentication and advanced config support.
-
-- Ask for SSH passwords when connecting, with optional encrypted-vault storage.
-- Fix conditional SSH config imports and leave Git service aliases unchecked.
-
-- Added a dedicated GitHub update dialog, with shortcuts in the app menu and About page.
-- Fixed dialog keyboard focus, connection-form input loss and Save connecting without being asked.
-- Fixed stale SSH approval retries and SSH key paths containing `=`.
-- Save sessions before quitting or restarting, including custom terminal tab names.
+- Share OpenSSH terminals, files and tunnels, with safer reconnects and saved workspaces.
+- Add password prompts, credential-provider references, privacy controls and clearer agent approval guidance.
+- Add resumable transfers, connection-library backups and coordinated update/restart recovery.
+- Fix transfer pausing, file permissions, cron schedules, failed services, APT architecture matching, system metrics and unsaved drafts.
+- Verify macOS installer signatures and notarization before replacing the app.
 
 ## 0.2.1 - 2026-11-05
 
