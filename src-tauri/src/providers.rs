@@ -545,9 +545,16 @@ pub fn packages(
             let Some((name_arch, rest)) = line.split_once('/') else {
                 continue;
             };
-            let version = rest.split_whitespace().nth(1).unwrap_or_default();
+            let fields = rest.split_whitespace().collect::<Vec<_>>();
+            let version = fields.get(1).copied().unwrap_or_default();
+            let architecture = fields.get(2).copied().unwrap_or_default();
             if !name_arch.is_empty() && !version.is_empty() {
-                upgrades.insert(name_arch.to_string(), version.to_string());
+                let key = if name_arch.contains(':') || architecture.is_empty() {
+                    name_arch.to_string()
+                } else {
+                    format!("{name_arch}:{architecture}")
+                };
+                upgrades.insert(key, version.to_string());
             }
         }
         let raw = if query.trim().is_empty() {
@@ -580,9 +587,15 @@ pub fn packages(
                 let Some((name, description)) = line.split_once(" - ") else {
                     continue;
                 };
-                (name, "", "", description, installed_names.contains(name))
+                let installed = installed_names.contains(name) || installed_names.iter().any(|installed: &String| {
+                    installed.split_once(':').is_some_and(|(base, _)| base == name)
+                });
+                (name, "", "", description, installed)
             };
-            let upgrade_version = upgrades.get(name).cloned().or_else(|| {
+            let upgrade_version = upgrades.get(name)
+                .or_else(|| upgrades.get(&format!("{name}:{architecture}")))
+                .cloned().or_else(|| {
+                if !architecture.is_empty() || name.contains(':') { return None; }
                 upgrades.iter().find_map(|(qualified_name, version)| {
                     qualified_name
                         .split_once(':')

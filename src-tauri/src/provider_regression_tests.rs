@@ -52,7 +52,12 @@ fn managed_tools_loopback() {
     assert_eq!(jobs.len(), 2);
     assert_eq!(jobs[1].command, "printf \"system  fixture\"");
     assert!(!jobs[1].editable);
+    let all_packages = packages(&store, &profile.id, "", false, 0, 20, None).unwrap();
+    assert_eq!(all_packages.packages.items.len(), 2);
+    assert_eq!(all_packages.packages.items[0].upgrade_version.as_deref(), Some("2.0"));
+    assert!(all_packages.packages.items[1].upgrade_version.is_none(), "An amd64 upgrade must not apply to i386");
     let installed = packages(&store, &profile.id, "", true, 0, 20, None).unwrap();
+    assert_eq!(installed.packages.items.len(), 1);
     assert_eq!(installed.packages.items[0].upgrade_version.as_deref(), Some("2.0"));
     let searched = packages(&store, &profile.id, "fixture", false, 0, 20, None).unwrap();
     assert!(searched.packages.items[0].installed);

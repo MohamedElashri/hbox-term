@@ -89,7 +89,7 @@ def feature_output(command, script):
     if command.startswith(b'LC_ALL=C apt list '):
         return b'Listing...\nfixture/stable 2.0 amd64 [upgradable from: 1.0]\n'
     if command.startswith(b'dpkg-query -W '):
-        return b'fixture\t1.0\tamd64\tFixture package\n' if b'Summary' in command else b'fixture\n'
+        return b'fixture:amd64\t1.0\tamd64\tFixture package\nfixture:i386\t1.0\ti386\tOther architecture\n' if b'Summary' in command else b'fixture:amd64\nfixture:i386\n'
     if command.startswith(b'apt-cache search '):
         return b'fixture - Fixture package\n'
     if command.startswith(b'apt-cache show '):

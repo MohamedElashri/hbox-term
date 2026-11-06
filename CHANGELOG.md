@@ -5,7 +5,7 @@
 - Share OpenSSH terminals, files and tunnels, with safer reconnects and saved workspaces.
 - Add password prompts, credential-provider references, privacy controls and clearer agent approval guidance.
 - Add resumable transfers, connection-library backups and coordinated update/restart recovery.
-- Fix transfer pausing, file permissions, cron schedules, hidden failed services, system metrics and unsaved connection drafts.
+- Fix transfer pausing, file permissions, cron schedules, failed services, APT architecture matching, system metrics and unsaved drafts.
 - Verify macOS installer signatures and notarization before replacing the app.
 
 ## 0.2.1 - 2026-11-05
