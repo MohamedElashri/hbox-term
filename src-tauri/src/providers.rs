@@ -1028,6 +1028,8 @@ pub fn services(
         ))?;
         let mut services = Vec::new();
         for line in output.lines() {
+            let line = line.trim_start();
+            let line = line.strip_prefix('●').unwrap_or(line).trim_start();
             let fields: Vec<&str> = line.split_whitespace().collect();
             if fields.len() < 4 || !fields[0].ends_with(".service") {
                 continue;

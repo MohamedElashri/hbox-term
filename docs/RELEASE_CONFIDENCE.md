@@ -26,6 +26,10 @@ overview, SFTP file editing/rename/permissions/delete, a paused and resumed bina
 queued download byte equality, and checksum-previewed backup restoration with a rollback
 copy. These run through the real native app and a disposable SSH/SFTP server. Its Linux
 overview is representative fixture output, not a live system-administration environment.
+Remote-tool checks additionally cover process tables, failed systemd units and details,
+cron, installed/searchable APT packages, accounts/groups, journal output, sockets,
+container resources and disk scans. Those shell responses are fixtures over a real SSH
+transport; destructive administration commands are never executed on a live server.
 `make test-managed-tools` exercises the managed SSH/SFTP path on both CI platforms.
 Debug QA processes set `TERNWAY_QA_KNOWN_HOSTS` to an isolated absolute file; production
 builds ignore that override and use the user's OpenSSH trust file. QA never changes `HOME`.
@@ -120,3 +124,7 @@ input, GPU/scale variations, sleep/wake, lock/unlock, changed networks, multiple
 large transfers, update/restart recovery, and a longer daily-workload soak. Record real
 provider approval behavior separately. Live 1Password/Bitwarden password retrieval was
 deferred at the user's request; fixture coverage does not close that gate.
+
+The macOS regression check also confirms that switching ordinary windows preserves a
+connection draft's non-secret fields while clearing its password, local terminal Unicode
+output remains searchable, and the development build's GitHub update check completes.

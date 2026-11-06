@@ -217,6 +217,22 @@ try:
     system_disk = execute("return Array.from(document.querySelectorAll('.stat-card')).find(el=>el.textContent.includes('System disk'))?.textContent;")
     assert '25%' in system_disk and 'free on /' in system_disk and '/run' not in system_disk, system_disk
     check('real SSH host-key review, rejected-password recovery and root-filesystem overview')
+    for view, expected_text in [
+        ('processes', '/usr/bin/fixture --label two words'),
+        ('services', 'failed.service'),
+        ('disk', '/dev/root'),
+        ('docker', 'fixture-web'),
+        ('logs', 'fixture service started'),
+        ('network', '[::]:239'),
+        ('cron', 'system  fixture'),
+        ('packages', 'Fixture package'),
+        ('accounts', '/home/qa'),
+    ]:
+        click(f'.nav-item[data-view="{view}"]')
+        wait(lambda: execute("return document.querySelector('.page-head')?.parentElement.textContent.includes(arguments[0]);", expected_text), f'{view} renders authenticated fixture data')
+        assert not execute("return !!document.querySelector('.error-panel');"), f'{view} showed an error'
+    click('.nav-item[data-view="dashboard"]')
+    check('native remote-tool views render processes, failed services, disks, containers, logs, sockets, cron, packages and accounts')
     server = next(row for row in invoke('get_state')['servers'] if row['name'] == 'CI fixture SSH')
     server_id = server['id']
     invoke('remote_file_action', serverId=server_id, action='mkdir', path='/qa-files', target=None, mode=None)
@@ -239,7 +255,7 @@ try:
     click('[data-action="transfer-queue"]')
     click('[data-action="run-transfer-queue"]')
     wait(lambda: any(p.stat().st_size > 0 for p in (fixture_root / 'files').glob('.fixture-upload.bin.*.part')), 'partial upload before pause')
-    click('[data-action="cancel-transfer"]')
+    click('.modal [data-action="cancel-transfer"]')
     wait(lambda: any(row['id']==job['id'] and row['status']=='paused' for row in invoke('list_transfer_jobs')), 'pause reaches the running transfer')
     assert not (fixture_root / 'files' / upload.name).exists(), 'Paused upload must not publish a partial destination'
     click('[data-job-action="retry"]')

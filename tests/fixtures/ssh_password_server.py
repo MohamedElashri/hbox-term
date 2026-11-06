@@ -27,6 +27,9 @@ architecture\tx86_64
 root\tfalse
 command\tss
 command\tcrontab
+command\tsystemctl
+command\tdocker
+command\tjournalctl
 packageManager\tapt-get
 __TERNWAY_OVERVIEW_V1__cpu
 before\t10 0 10 80 0 0 0 0
@@ -48,6 +51,65 @@ __TERNWAY_OVERVIEW_V1__uptime
 __TERNWAY_OVERVIEW_V1__network
 2: eth0 inet 192.0.2.10/24 scope global eth0
 """
+
+
+def feature_output(command, script):
+    """Representative read-only tool responses; never execute an incoming command."""
+    if b"__TERNWAY_OVERVIEW_V1__" in script:
+        return OVERVIEW
+    if command.startswith(b"printf 'distro\\t'; os_release="):
+        return OVERVIEW.split(b'__TERNWAY_OVERVIEW_V1__capabilities\n')[1].split(b'__TERNWAY_OVERVIEW_V1__cpu')[0]
+    if b"__TERNWAY_DISK_V1__" in script:
+        return b"__TERNWAY_DISK_V1__mounts\nFilesystem Blocks Used Available Use% Mounted on\n/dev/root 1000000 250000 750000 25% /\n__TERNWAY_DISK_V1__inodes\ninode\t/dev/root\t1000\t100\t10%\t/\n__TERNWAY_DISK_V1__largest_files\n4096\t1\t/var/log/fixture.log\n__TERNWAY_DISK_V1__largest_dirs\n10240\t/var/log\n__TERNWAY_DISK_V1__docker_usage\n"
+    if b"__TERNWAY_DOCKER_ITEMS_V1__" in script:
+        kind = next((name for name in [b'containers', b'images', b'volumes', b'networks'] if b"'" + name + b"'" in command), None)
+        rows = {
+            b'containers': b'{"ID":"abc123","Names":"fixture-web","Image":"nginx:fixture","State":"running","Status":"Up 1 hour","Ports":"8080/tcp"}',
+            b'images': b'{"ID":"image123","Repository":"nginx","Tag":"fixture","Size":"10MB"}',
+            b'volumes': b'{"Name":"fixture-data","Driver":"local"}',
+            b'networks': b'{"ID":"net123","Name":"fixture-net","Driver":"bridge","Scope":"local"}',
+        }
+        stats = b'{"ID":"abc123","Name":"fixture-web","CPUPerc":"2.5%","MemUsage":"1MiB / 10MiB","MemPerc":"10%","NetIO":"2kB / 3kB","BlockIO":"0B / 0B"}' if kind == b'containers' else b''
+        if kind in rows:
+            return b'__TERNWAY_DOCKER_ITEMS_V1__\n' + rows[kind] + b'\n__TERNWAY_DOCKER_STATS_V1__\n' + stats + b'\n'
+    if command.startswith(b'if ps -eo '):
+        return b'ternway-eo\n42 qa 2.5 1.0 1024 60 /usr/bin/fixture --label two words\n'
+    if command.startswith(b'systemctl list-units '):
+        return 'fixture.service loaded active running Fixture service\n\u25cf failed.service loaded failed failed Failed fixture\n'.encode()
+    if command.startswith(b'for unit in '):
+        return b'fixture.service\tenabled\nfailed.service\tdisabled\n'
+    if command.startswith(b'systemctl show '):
+        return b'/etc/systemd/system/fixture.service\n' if b'-p FragmentPath' in command else b'Description=Fixture service\nActiveState=active\nMainPID=42\n'
+    if command.startswith(b'journalctl '):
+        return b'2026-11-06T12:00:00+0000 fixture service started\n'
+    if command.startswith(b'crontab -l '):
+        return b'MAILTO = "fixture@example.invalid"\n@reboot printf "two  spaces"\n'
+    if command.startswith(b'for f in /etc/crontab '):
+        return b'/etc/cron.d/fixture\t@daily root printf "system  fixture"\n'
+    if command.startswith(b'LC_ALL=C apt list '):
+        return b'Listing...\nfixture/stable 2.0 amd64 [upgradable from: 1.0]\n'
+    if command.startswith(b'dpkg-query -W '):
+        return b'fixture\t1.0\tamd64\tFixture package\n' if b'Summary' in command else b'fixture\n'
+    if command.startswith(b'apt-cache search '):
+        return b'fixture - Fixture package\n'
+    if command.startswith(b'apt-cache show '):
+        return b'Package: fixture\nVersion: 1.0\n'
+    if command.startswith(b'ss -H '):
+        return b'tcp LISTEN 0 128 [::]:239 [::]:* users:(("sshd",pid=42,fd=3))\n'
+    if command.startswith(b'if command -v getent '):
+        if b'getent passwd' in command:
+            return b'qa:x:1000:1000:Fixture:/home/qa:/bin/sh\n'
+        if b'getent group' in command:
+            return b'qa:x:1000:\noperators:x:1001:qa\n'
+        if b'getent shadow' in command:
+            return b'qa:!:19000:0:99999:7:::\n'
+    if command == b'id -u':
+        return b'0\n'  # Only the fixture simulates privilege; no system account is used.
+    if command.startswith(b'LC_ALL=C lastlog '):
+        return b'Username Port From Latest\nqa pts/0 fixture Fri Nov 6 12:00:00 +0000 2026\n'
+    if command == b'docker info >/dev/null':
+        return b''
+    return None
 
 
 class SftpServer(paramiko.SFTPServer):
@@ -188,8 +250,9 @@ class Server(paramiko.ServerInterface):
                         if len(script) > 262144:
                             channel.close()
                             return
-                if b"__TERNWAY_OVERVIEW_V1__" in script:
-                    channel.sendall(OVERVIEW)
+                output = feature_output(command, script)
+                if output is not None:
+                    channel.sendall(output)
                 else:
                     channel.send_stderr(b"Unsupported command in isolated feature fixture\n")
                     channel.send_exit_status(1)

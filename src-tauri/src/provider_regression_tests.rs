@@ -38,6 +38,45 @@ fn managed_tools_loopback() {
         .unwrap();
     assert_eq!(disks[0].mount, "/");
     assert_eq!(disks[0].percent, 25.0);
+    let processes = processes(&store, &profile.id, 0, 20, None).unwrap();
+    assert_eq!(processes.items[0].pid, 42);
+    assert_eq!(processes.items[0].rss_bytes, 1024 * 1024);
+    let units = services(&store, &profile.id, 0, 20, None).unwrap();
+    assert_eq!(units.items.len(), 2, "Failed systemd units must remain visible");
+    assert_eq!(units.items[1].name, "failed.service");
+    assert_eq!(units.items[1].enabled, Some(false));
+    let details = service_details(&store, &profile.id, "fixture.service", None).unwrap();
+    assert!(details.journal.contains("fixture service started"));
+    assert_eq!(details.unit_file.as_deref(), Some("/etc/systemd/system/fixture.service"));
+    let jobs = cron_jobs(&store, &profile.id, None).unwrap();
+    assert_eq!(jobs.len(), 2);
+    assert_eq!(jobs[1].command, "printf \"system  fixture\"");
+    assert!(!jobs[1].editable);
+    let installed = packages(&store, &profile.id, "", true, 0, 20, None).unwrap();
+    assert_eq!(installed.packages.items[0].upgrade_version.as_deref(), Some("2.0"));
+    let searched = packages(&store, &profile.id, "fixture", false, 0, 20, None).unwrap();
+    assert!(searched.packages.items[0].installed);
+    assert!(package_details(&store, &profile.id, "fixture", None).unwrap().contains("Version: 1.0"));
+    assert_eq!(ports(&store, &profile.id, 0, 20, None).unwrap().items[0].pid, Some(42));
+    let users = accounts(&store, &profile.id, None).unwrap();
+    assert!(users.users[0].locked);
+    assert_eq!(users.users[0].groups, vec!["qa", "operators"]);
+    let log_request = serde_json::from_value(serde_json::json!({"source":"system", "lines":20})).unwrap();
+    assert!(logs(&store, &profile.id, &log_request, None).unwrap().contains("fixture service started"));
+    for section in ["containers", "images", "volumes", "networks"] {
+        let snapshot = docker_snapshot(&store, &profile.id, section, 0, 20, None).unwrap();
+        assert_eq!(snapshot.runtime, "docker");
+        match section {
+            "containers" => assert_eq!(snapshot.containers[0].memory_usage_bytes, Some(1024 * 1024)),
+            "images" => assert_eq!(snapshot.images[0].repository, "nginx"),
+            "volumes" => assert_eq!(snapshot.volumes[0].name, "fixture-data"),
+            "networks" => assert_eq!(snapshot.networks[0].name, "fixture-net"),
+            _ => unreachable!(),
+        }
+    }
+    let disk = crate::disk::disk_snapshot(&store, &profile.id, None).unwrap();
+    assert_eq!(disk.mounts[0].mount, "/");
+    assert_eq!(disk.largest_files[0].path, "/var/log/fixture.log");
     file_action(
         &store,
         &profile.id,
