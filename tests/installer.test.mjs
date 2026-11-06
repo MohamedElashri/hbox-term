@@ -7,7 +7,7 @@ import { test } from "node:test";
 
 // Every external installer command is a fixture. Nothing contacts GitHub,
 // mounts a disk image or changes /Applications during these tests.
-for (const rejection of ["", "checksum", "codesign", "spctl", "stapler"]) {
+for (const rejection of ["", "checksum", "codesign"]) {
   test(`macOS installer ${rejection ? `preserves the installed app after ${rejection} rejection` : "verifies a package before replacing the app"}`, () => {
     const root = mkdtempSync(join(tmpdir(), "ternway-installer-test-"));
     const trace = join(root, "trace");
@@ -50,6 +50,7 @@ esac
       });
       const calls = readFileSync(trace, "utf8").split("\n");
       assert.ok(!calls.some(line => line.startsWith("xattr ")), "Installer must keep macOS security protections intact");
+      assert.ok(!calls.some(line => line.startsWith("spctl ") || line.startsWith("xcrun ")), "Ad-hoc packages do not require Apple notarization or change Gatekeeper settings");
       const replacement = calls.findIndex(line => line === "rm -rf /Applications/Ternway.app");
       if (rejection) {
         assert.notEqual(result.status, 0, result.stdout + result.stderr);
@@ -57,11 +58,13 @@ esac
         assert.ok(!calls.some(line => line.startsWith("cp ")));
       } else {
         assert.equal(result.status, 0, result.stdout + result.stderr);
-        for (const prefix of ["codesign --verify", "spctl --assess", "xcrun stapler validate"]) {
+        for (const prefix of ["codesign --verify"]) {
           const index = calls.findIndex(line => line.startsWith(prefix));
           assert.ok(index >= 0 && index < replacement, `${prefix} must precede replacement`);
         }
         assert.ok(calls.some(line => line.startsWith("cp -R ")));
+        assert.match(result.stdout, /ad-hoc signed and not notarized/);
+        assert.match(result.stdout, /Privacy & Security > Open Anyway/);
       }
       if (rejection !== "checksum") assert.ok(calls.some(line => line.startsWith("hdiutil detach ")), "Always detach the test image, including on rejection");
     } finally {

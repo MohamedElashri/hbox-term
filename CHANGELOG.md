@@ -6,7 +6,7 @@
 - Add password prompts, credential-provider references, privacy controls and clearer agent approval guidance.
 - Add resumable transfers, connection-library backups and coordinated update/restart recovery.
 - Fix transfer pausing, file permissions, cron schedules, failed services, APT architecture matching, system metrics and unsaved drafts.
-- Verify macOS installer signatures and notarization before replacing the app.
+- Build macOS packages with free ad-hoc signing, verified downloads and clear first-launch instructions.
 
 ## 0.2.1 - 2026-11-05
 

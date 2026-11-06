@@ -37,9 +37,11 @@ to pin a release.
 | Linux x86_64 / ARM64 | `.deb`, `.rpm` or `.AppImage` |
 
 > [!NOTE]
-> **macOS:** new release packages require Developer ID signing and notarization. The installer
-> checks the signature, Gatekeeper approval and notarization ticket before replacing the app.
-> Production signing is being prepared; use a source build for local testing in the meantime.
+> **macOS:** packages are ad-hoc signed and are not notarized by Apple. If macOS blocks the
+> first launch, use **System Settings → Privacy & Security → Open Anyway** after reviewing
+> the download. See [Apple's instructions](https://support.apple.com/102445).
+> The installer checks download checksums and signature integrity; in-app updates verify
+> Ternway's updater signature. These checks do not provide Apple Developer ID verification.
 
 ## Development
 
