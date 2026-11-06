@@ -27,7 +27,7 @@ queued download byte equality, and checksum-previewed backup restoration with a 
 copy. These run through the real native app and a disposable SSH/SFTP server. Its Linux
 overview is representative fixture output, not a live system-administration environment.
 Remote-tool checks additionally cover process tables, failed systemd units and details,
-cron, installed/searchable APT packages, accounts/groups, journal output, sockets,
+cron, architecture-aware installed/searchable APT packages, accounts/groups, journal output, sockets,
 container resources and disk scans. Those shell responses are fixtures over a real SSH
 transport; destructive administration commands are never executed on a live server.
 `make test-managed-tools` exercises the managed SSH/SFTP path on both CI platforms.
