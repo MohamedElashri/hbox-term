@@ -10,7 +10,12 @@ set -eu
 repo=MohamedElashri/ternway
 tag=${TERNWAY_VERSION:-latest}
 tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT
+mounted=
+cleanup() {
+  [ -z "$mounted" ] || hdiutil detach -quiet "$mounted" >/dev/null 2>&1 || true
+  rm -rf "$tmp"
+}
+trap cleanup EXIT
 die() { echo "Ternway install: $*" >&2; exit 1; }
 wanted=$tag
 no_release() {
@@ -60,13 +65,16 @@ file="$tmp/$asset"
 case "$asset" in
   *.dmg)
     hdiutil attach -nobrowse -quiet -mountpoint "$tmp/mnt" "$file"
+    mounted="$tmp/mnt"
     app_name=Ternway
     [ -d "$tmp/mnt/$app_name.app" ] || die "no application bundle found in the disk image"
+    codesign --verify --deep --strict "$tmp/mnt/$app_name.app" || die "application signature verification failed"
+    spctl --assess --type execute "$tmp/mnt/$app_name.app" || die "macOS did not approve this application"
+    xcrun stapler validate "$tmp/mnt/$app_name.app" || die "application notarization ticket is missing or invalid"
     rm -rf "/Applications/$app_name.app"
     cp -R "$tmp/mnt/$app_name.app" /Applications/
     hdiutil detach -quiet "$tmp/mnt"
-    # The app is not notarized; drop the download quarantine so it opens.
-    xattr -dr com.apple.quarantine "/Applications/$app_name.app" 2>/dev/null || true
+    mounted=
     echo "Installed /Applications/$app_name.app" ;;
   *.deb) sudo apt-get install -y "$file" ;;
   *.rpm)
